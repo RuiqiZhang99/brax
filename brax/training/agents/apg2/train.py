@@ -34,6 +34,7 @@ import jax
 import jax.numpy as jnp
 import optax
 import numpy as np
+import tensorflow as tf
 
 InferenceParams = Tuple[running_statistics.NestedMeanStd, Params]
 Metrics = types.Metrics
