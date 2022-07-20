@@ -144,7 +144,7 @@ def train(environment: envs.Env,
 
     return (nstate, key), (nstate.reward, env_state.obs, nstate.obs)
 
-  def loss(policy_params, normalizer_params, key):
+  def loss(policy_params, target_value_params, normalizer_params, key):
     key_reset, key_scan = jax.random.split(key)
     env_state = env.reset(
         jax.random.split(key_reset, num_envs // process_count))
@@ -166,7 +166,11 @@ def train(environment: envs.Env,
       rewards,
       length = int(rewards.shape[0]),
       reverse=True)
-    policy_loss = -jnp.mean(discount_returns[0])
+    
+    value_apply = value_network.value_network.apply
+    target_boostrap = value_apply(normalizer_params, target_value_params, next_obs[-1])
+    policy_loss = -jnp.mean(discount_returns[0] + target_boostrap)
+
     return policy_loss, (rewards, obs, next_obs, policy_loss)
     #==================================================================================================================#
 
@@ -176,8 +180,7 @@ def train(environment: envs.Env,
     g_norm = optax.global_norm(updates)
     trigger = g_norm < max_gradient_norm
     return jax.tree_map(
-        lambda t: jnp.where(trigger, t, (t / g_norm) * max_gradient_norm),
-        updates)
+        lambda t: jnp.where(trigger, t, (t / g_norm) * max_gradient_norm), updates)
 
   #================================================ S T A R T =======================================================#
   def compute_v_loss(v_params: Params, target_v_params: Params, normalizer_params: Any, 
@@ -211,7 +214,8 @@ def train(environment: envs.Env,
 
   def training_epoch(training_state: TrainingState, key: PRNGKey):
     key, key_grad = jax.random.split(key)
-    grad, (rewards, obs, next_obs, policy_loss) = loss_grad(training_state.policy_params, training_state.normalizer_params, key_grad)
+    grad, (rewards, obs, next_obs, policy_loss) = loss_grad(training_state.policy_params,
+                                                  training_state.target_value_params, training_state.normalizer_params, key_grad)
     grad = clip_by_global_norm(grad)
     grad = jax.lax.pmean(grad, axis_name='i')
     params_update, optimizer_state = optimizer.update(grad, training_state.optimizer_state)
