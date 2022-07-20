@@ -146,10 +146,8 @@ def train(environment: envs.Env,
 
   def loss(policy_params, target_value_params, normalizer_params, key):
     key_reset, key_scan = jax.random.split(key)
-    env_state = env.reset(
-        jax.random.split(key_reset, num_envs // process_count))
-    f = functools.partial(
-        env_step, policy=make_policy((normalizer_params, policy_params)))
+    env_state = env.reset(jax.random.split(key_reset, num_envs // process_count))
+    f = functools.partial(env_step, policy=make_policy((normalizer_params, policy_params)))
     (rewards, obs, next_obs) = jax.lax.scan(f, (env_state, key_scan), (jnp.array(range(episode_length // action_repeat))))[1]
 
     #================================================ S T A R T =======================================================#
@@ -168,8 +166,8 @@ def train(environment: envs.Env,
       reverse=True)
     
     value_apply = value_network.value_network.apply
-    target_boostrap = value_apply(normalizer_params, target_value_params, next_obs[-1])
-    policy_loss = -jnp.mean(discount_returns[0] + target_boostrap)
+    target_bootstrap = value_apply(normalizer_params, target_value_params, next_obs[-1])
+    policy_loss = -jnp.mean(discount_returns[0] + target_bootstrap)
 
     return policy_loss, (rewards, obs, next_obs, policy_loss)
     #==================================================================================================================#
