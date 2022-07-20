@@ -152,7 +152,23 @@ def train(environment: envs.Env,
         env_step, policy=make_policy((normalizer_params, policy_params)))
     (rewards, obs, next_obs) = jax.lax.scan(f, (env_state, key_scan), (jnp.array(range(episode_length // action_repeat))))[1]
 
-    return -jnp.mean(rewards), (rewards, obs, next_obs)
+    #================================================ S T A R T =======================================================#
+    def compute_discount_return(carry, target_t):
+      discount, acc = carry
+      reward = target_t
+      acc = reward + discount * acc
+      return (discount, acc), acc
+    
+    acc = jnp.zeros_like(rewards[0])
+    (_, discount_returns) = jax.lax.scan(
+      compute_discount_return,
+      (discount, acc),
+      rewards,
+      length = int(rewards.shape[0]),
+      reverse=True)
+    policy_loss = -jnp.mean(discount_returns[0])
+    return policy_loss, (rewards, obs, next_obs, policy_loss)
+    #==================================================================================================================#
 
   loss_grad = jax.grad(loss, has_aux=True)
 
@@ -195,7 +211,7 @@ def train(environment: envs.Env,
 
   def training_epoch(training_state: TrainingState, key: PRNGKey):
     key, key_grad = jax.random.split(key)
-    grad, (rewards, obs, next_obs) = loss_grad(training_state.policy_params, training_state.normalizer_params, key_grad)
+    grad, (rewards, obs, next_obs, policy_loss) = loss_grad(training_state.policy_params, training_state.normalizer_params, key_grad)
     grad = clip_by_global_norm(grad)
     grad = jax.lax.pmean(grad, axis_name='i')
     params_update, optimizer_state = optimizer.update(grad, training_state.optimizer_state)
@@ -220,7 +236,8 @@ def train(environment: envs.Env,
     #================================================ S T A R T =======================================================#
         'v_params_norm': optax.global_norm(value_params),
         'target_v_params_norm': optax.global_norm(target_value_params),
-        'v_loss': v_loss,
+        'policy_loss': policy_loss,
+        'value_loss': v_loss,
     #==================================================================================================================#
     }
     return TrainingState(
@@ -309,7 +326,8 @@ def train(environment: envs.Env,
     #================================================ S T A R T =======================================================#
     tf.summary.scalar('v_params_norm', data=np.array(training_metrics['training/v_params_norm']), step=it*episode_length*num_envs)
     tf.summary.scalar('target_v_params_norm', data=np.array(training_metrics['training/target_v_params_norm']), step=it*episode_length*num_envs)
-    tf.summary.scalar('v_loss', data=np.array(training_metrics['training/v_loss']), step=it*episode_length*num_envs)
+    tf.summary.scalar('policy_loss', data=np.array(training_metrics['training/policy_loss']), step=it*episode_length*num_envs)
+    tf.summary.scalar('value_loss', data=np.array(training_metrics['training/value_loss']), step=it*episode_length*num_envs)
     #==================================================================================================================#
 
     if process_id == 0:
