@@ -29,6 +29,10 @@ class APGNetworks:
   policy_network: networks.FeedForwardNetwork
   parametric_action_distribution: distribution.ParametricDistribution
 
+@flax.struct.dataclass
+class VNetworks:
+  value_network: networks.FeedForwardNetwork
+
 
 def make_inference_fn(apg_networks: APGNetworks):
   """Creates params and inference function for the APG agent."""
@@ -67,3 +71,20 @@ def make_apg_networks(
   return APGNetworks(
       policy_network=policy_network,
       parametric_action_distribution=parametric_action_distribution)
+
+
+def make_value_networks(
+    observation_size: int,
+    action_size: int,
+    preprocess_observations_fn: types.PreprocessObservationFn = types
+    .identity_observation_preprocessor,
+    value_hidden_layer_sizes: Sequence[int] = (32,) * 4,
+    activation: networks.ActivationFn = linen.swish) -> VNetworks:
+
+  value_network = networks.make_value_network(
+      observation_size,
+      preprocess_observations_fn=preprocess_observations_fn,
+      hidden_layer_sizes=value_hidden_layer_sizes,
+      activation=activation)
+  return VNetworks(value_network=value_network)
+
