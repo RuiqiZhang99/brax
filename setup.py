@@ -42,6 +42,8 @@ setup(
         "flax",
         "gym",
         "grpcio",
+        "rlax",
+        "tensorflow",
         "jax",
         "jaxlib",
         "numpy",
@@ -50,6 +52,7 @@ setup(
         "pytinyrenderer",
         "tensorboardX",
         "trimesh",
+        "ipython",
         "typing-extensions",
         # TODO: remove when
         #   https://github.com/google/flax/issues/2190 is fixed.
