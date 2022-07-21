@@ -78,13 +78,13 @@ def make_value_networks(
     action_size: int,
     preprocess_observations_fn: types.PreprocessObservationFn = types
     .identity_observation_preprocessor,
-    value_hidden_layer_sizes: Sequence[int] = (128,) * 2,
+    hidden_layer_sizes: Sequence[int] = (128,) * 2,
     activation: networks.ActivationFn = linen.elu) -> VNetworks:
 
   value_network = networks.make_value_network(
       observation_size,
       preprocess_observations_fn=preprocess_observations_fn,
-      hidden_layer_sizes=value_hidden_layer_sizes,
+      hidden_layer_sizes=hidden_layer_sizes,
       activation=activation)
   return VNetworks(value_network=value_network)
 
