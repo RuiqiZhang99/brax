@@ -1,6 +1,6 @@
 import functools
 import time
-from typing import Callable, Optional, Tuple, Any
+from typing import Callable, Optional, Tuple, Sequence, Any
 
 from absl import logging
 from brax import envs
@@ -44,20 +44,23 @@ def _unpmap(v):
 
 
 def train(environment: envs.Env,
-          episode_length: int,
+          episode_length: int = 1000,
           action_repeat: int = 1,
-          num_envs: int = random.randint(0, 9999),
+          num_envs: int = 64,
           max_devices_per_host: Optional[int] = None,
           num_eval_envs: int = 128,
-          learning_rate: float = 6e-4,
-          seed: int = 0,
+          policy_lr: float = 2e-3,
+          value_lr: float = 2e-3,
+          seed: int = random.randint(0, 9999),
           truncation_length: Optional[int] = None,
-          max_gradient_norm: float = 1e9,
+          max_gradient_norm: float = 1e3,
           num_evals: int = 1,
           discount = 0.99,
           lambda_ = 0.95,
-          alpha = 0.95,
+          alpha = 0.20,
           horizon = 32,
+          policy_hls: Sequence[int] = (256,) * 2,
+          value_hls: Sequence[int] = (128,) * 2,
           normalize_observations: bool = True,
           deterministic_eval: bool = False,
           tensorboard_flag = True,
@@ -106,18 +109,19 @@ def train(environment: envs.Env,
   apg_network = network_factory(
       env.observation_size,
       env.action_size,
-      preprocess_observations_fn=normalize)
+      preprocess_observations_fn=normalize,
+      hideen_layer_sizes=policy_hls)
   make_policy = apg_networks.make_inference_fn(apg_network)
 
-  optimizer = optax.adam(learning_rate=learning_rate)
+  optimizer = optax.adam(learning_rate=policy_lr, b1=0.7, b2=0.95)
 
 #================================================ S T A R T =======================================================#
   value_network = value_network_factory(
       env.observation_size,
       env.action_size,
-      preprocess_observations_fn=normalize
-  )
-  value_optimizer = optax.adam(learning_rate=learning_rate)
+      preprocess_observations_fn=normalize,
+      hideen_layer_sizes=value_hls)
+  value_optimizer = optax.adam(learning_rate=value_lr, b1=0.7, b2=0.95)
 #==================================================================================================================#
 
   def env_step(carry: Tuple[envs.State, PRNGKey], step_index: int,
@@ -133,7 +137,7 @@ def train(environment: envs.Env,
 
     return (nstate, key), (nstate.reward, env_state.obs, nstate.obs)
 
-  def data_generating(policy_params, target_value_params, normalizer_params, key):
+  def data_generating(policy_params, normalizer_params, key):
     key_reset, key_scan = jax.random.split(key)
     env_state = env.reset(jax.random.split(key_reset, num_envs // process_count))
     f = functools.partial(env_step, policy=make_policy((normalizer_params, policy_params)))
@@ -147,8 +151,7 @@ def train(environment: envs.Env,
     return (rewards, obs, next_obs), (seg_rewards, seg_obs, seg_next_obs)
   
   def loss(policy_params, target_value_params, normalizer_params, key):
-    (rewards, obs, next_obs), (seg_rewards, seg_obs, seg_next_obs) = data_generating(
-                                                                      policy_params, target_value_params, normalizer_params, key)
+    (rewards, obs, next_obs), (seg_rewards, seg_obs, seg_next_obs) = data_generating(policy_params, normalizer_params, key)
     value_apply = value_network.value_network.apply
     #====================================== Calculate segment policy-loss ==============================================#
     def calculate_seg_loss(carry, target_t):
