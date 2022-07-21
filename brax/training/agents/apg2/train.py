@@ -1,19 +1,3 @@
-# Copyright 2022 The Brax Authors.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-"""Analytic policy gradient training."""
-
 import functools
 import time
 from typing import Callable, Optional, Tuple, Any
@@ -169,13 +153,11 @@ def train(environment: envs.Env,
     def calculate_seg_loss(carry, target_t):
       discount = carry
       local_rewards, local_obs, local_next_obs = target_t
-
       def compute_discount_return(local_carry, local_target_t):
         discount, local_acc = local_carry
         reward = local_target_t
         local_acc = reward + discount * local_acc
         return (discount, local_acc), local_acc
-      
       local_acc = jnp.zeros_like(local_rewards[0])
       (_, discount_returns) = jax.lax.scan(
         compute_discount_return,
@@ -195,7 +177,7 @@ def train(environment: envs.Env,
       length=num_segments)
     policy_loss = jnp.mean(policy_loss_set)
      
-    return policy_loss, (rewards, obs, next_obs, policy_loss)
+    return policy_loss, (rewards, obs, next_obs, seg_rewards, seg_obs, seg_next_obs, policy_loss)
     #==================================================================================================================#
 
   loss_grad = jax.grad(loss, has_aux=True)
@@ -208,37 +190,49 @@ def train(environment: envs.Env,
 
   #================================================ S T A R T =======================================================#
   def compute_v_loss(v_params: Params, target_v_params: Params, normalizer_params: Any, 
-                rewards, obs, next_obs, lambda_: float = lambda_, discount: float = discount):
+                     seg_rewards, seg_obs, seg_next_obs, 
+                     lambda_: float = lambda_, discount: float = discount):
     value_apply = value_network.value_network.apply
-    values = value_apply(normalizer_params, v_params, obs)
-    target_values = value_apply(normalizer_params, target_v_params, obs)
-    target_bootstrap_value = value_apply(normalizer_params, target_v_params, next_obs[-1])
 
-    # Calculate Value Esitimation MSE Loss
-    values_t_plus_1 = jnp.concatenate([target_values[1:], jnp.expand_dims(target_bootstrap_value, 0)], axis=0)
-    deltas = rewards + discount * values_t_plus_1 - target_values
+    def local_v_loss(carry, target_t):
+      discount, lambda_ = carry
+      local_rewards, local_obs, local_next_obs = target_t
+      values = value_apply(normalizer_params, v_params, local_obs)
+      target_values = value_apply(normalizer_params, target_v_params, local_obs)
+      target_bootstrap_value = value_apply(normalizer_params, target_v_params, local_next_obs[-1])
+      # Calculate Value Esitimation MSE Loss
+      values_t_plus_1 = jnp.concatenate([target_values[1:], jnp.expand_dims(target_bootstrap_value, 0)], axis=0)
+      deltas = local_rewards + discount * values_t_plus_1 - target_values
+      v_acc = jnp.zeros_like(target_bootstrap_value)
+      td_error = []
 
-    v_acc = jnp.zeros_like(target_bootstrap_value)
-    td_error = []
-
-    def compute_td_error(carry, target_t):
-        lambda_, acc = carry
-        delta = target_t
-        acc = delta + discount * lambda_ * acc
-        return (lambda_, acc), (acc)
-    (_, _), (td_error) = jax.lax.scan(compute_td_error, (lambda_, v_acc), (deltas), length=int(rewards.shape[0]), reverse=True)
-    # Add V(x_s) to get v_s.
-    vs = jax.lax.stop_gradient(td_error + target_values) 
-    v_error = vs - values
-    v_loss = jnp.mean(v_error * v_error) * 0.5 * 0.5
-    return v_loss
+      def compute_td_error(local_carry, local_target_t):
+          lambda_, local_acc = local_carry
+          delta = local_target_t
+          local_acc = delta + discount * lambda_ * local_acc
+          return (lambda_, local_acc), (local_acc)
+      (_, _), (td_error) = jax.lax.scan(compute_td_error, (lambda_, v_acc), (deltas), length=int(local_rewards.shape[0]), reverse=True)
+      # Add V(x_s) to get v_s.
+      vs = jax.lax.stop_gradient(td_error + target_values) 
+      v_error = vs - values
+      local_v_loss = jnp.mean(v_error * v_error) * 0.5 * 0.5
+      return (discount, lambda_), local_v_loss
+    
+    (_, _), v_loss_set = jax.lax.scan(
+      local_v_loss,
+      (discount, lambda_),
+      (seg_rewards, seg_obs, seg_next_obs),
+      length = int(seg_rewards.shape[0]))
+    value_loss = jnp.mean(v_loss_set)
+    return value_loss
 
   value_update_fn = gradients.gradient_update_fn(compute_v_loss, value_optimizer, pmap_axis_name=_PMAP_AXIS_NAME)
   #==================================================================================================================#
 
   def training_epoch(training_state: TrainingState, key: PRNGKey):
     key, key_grad = jax.random.split(key)
-    grad, (rewards, obs, next_obs, policy_loss) = loss_grad(training_state.policy_params,
+    grad, (rewards, obs, next_obs, 
+          seg_rewards, seg_obs, seg_next_obs, policy_loss) = loss_grad(training_state.policy_params,
                                                   training_state.target_value_params, training_state.normalizer_params, key_grad)
     grad = clip_by_global_norm(grad)
     grad = jax.lax.pmean(grad, axis_name='i')
@@ -249,7 +243,7 @@ def train(environment: envs.Env,
     v_loss, value_params, value_optimizer_state = value_update_fn(training_state.value_params,
                                                         training_state.target_value_params,
                                                         training_state.normalizer_params, 
-                                                        rewards, obs, next_obs,
+                                                        seg_rewards, seg_obs, seg_next_obs,
                                                         optimizer_state = training_state.value_optimizer_state)
     
     target_value_params = jax.tree_map(lambda x, y: x*alpha+y*(1-alpha), training_state.target_value_params, value_params)
@@ -266,6 +260,7 @@ def train(environment: envs.Env,
         'target_v_params_norm': optax.global_norm(target_value_params),
         'policy_loss': policy_loss,
         'value_loss': v_loss,
+        'rewards': jnp.mean(rewards)
     #==================================================================================================================#
     }
     return TrainingState(
@@ -356,6 +351,7 @@ def train(environment: envs.Env,
     tf.summary.scalar('target_v_params_norm', data=np.array(training_metrics['training/target_v_params_norm']), step=it*episode_length*num_envs)
     tf.summary.scalar('policy_loss', data=np.array(training_metrics['training/policy_loss']), step=it*episode_length*num_envs)
     tf.summary.scalar('value_loss', data=np.array(training_metrics['training/value_loss']), step=it*episode_length*num_envs)
+    tf.summary.scalar('rewards', data=np.array(training_metrics['training/rewards']), step=it*episode_length*num_envs)
     #==================================================================================================================#
 
     if process_id == 0:
