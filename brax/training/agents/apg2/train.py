@@ -72,6 +72,7 @@ def train(environment: envs.Env,
           discount = 0.99,
           lambda_ = 0.95,
           alpha = 0.95,
+          horizon = 32,
           normalize_observations: bool = True,
           deterministic_eval: bool = False,
           tensorboard_flag = True,
@@ -81,6 +82,9 @@ def train(environment: envs.Env,
           progress_fn: Callable[[int, Metrics], None] = lambda *args: None):
   """Direct trajectory optimization training."""
   xt = time.time()
+
+  num_segments = int(episode_length / horizon)
+  store_length = int(num_segments * horizon)
 
   if tensorboard_flag:
     file_writer = tf.summary.create_file_writer(logdir)
@@ -144,31 +148,53 @@ def train(environment: envs.Env,
 
     return (nstate, key), (nstate.reward, env_state.obs, nstate.obs)
 
-  def loss(policy_params, target_value_params, normalizer_params, key):
+  def data_generating(policy_params, target_value_params, normalizer_params, key):
     key_reset, key_scan = jax.random.split(key)
     env_state = env.reset(jax.random.split(key_reset, num_envs // process_count))
     f = functools.partial(env_step, policy=make_policy((normalizer_params, policy_params)))
     (rewards, obs, next_obs) = jax.lax.scan(f, (env_state, key_scan), (jnp.array(range(episode_length // action_repeat))))[1]
 
-    #================================================ S T A R T =======================================================#
-    def compute_discount_return(carry, target_t):
-      discount, acc = carry
-      reward = target_t
-      acc = reward + discount * acc
-      return (discount, acc), acc
-    
-    acc = jnp.zeros_like(rewards[0])
-    (_, discount_returns) = jax.lax.scan(
-      compute_discount_return,
-      (discount, acc),
-      rewards,
-      length = int(rewards.shape[0]),
-      reverse=True)
-    
+    #============================================= Short-Horizon AC ====================================================#
+    seg_rewards = jnp.reshape(rewards[:store_length], (num_segments, horizon, -1))
+    seg_obs = jnp.reshape(obs[:store_length], (num_segments, horizon, num_envs, -1))
+    seg_next_obs = jnp.reshape(next_obs[:store_length], (num_segments, horizon, num_envs, -1))
+    assert seg_rewards.shape[-1] == num_envs
+    return (rewards, obs, next_obs), (seg_rewards, seg_obs, seg_next_obs)
+  
+  def loss(policy_params, target_value_params, normalizer_params, key):
+    (rewards, obs, next_obs), (seg_rewards, seg_obs, seg_next_obs) = data_generating(
+                                                                      policy_params, target_value_params, normalizer_params, key)
     value_apply = value_network.value_network.apply
-    target_bootstrap = value_apply(normalizer_params, target_value_params, next_obs[-1])
-    policy_loss = -jnp.mean(discount_returns[0] + target_bootstrap)
+    #====================================== Calculate segment policy-loss ==============================================#
+    def calculate_seg_loss(carry, target_t):
+      discount = carry
+      local_rewards, local_obs, local_next_obs = target_t
 
+      def compute_discount_return(local_carry, local_target_t):
+        discount, local_acc = local_carry
+        reward = local_target_t
+        local_acc = reward + discount * local_acc
+        return (discount, local_acc), local_acc
+      
+      local_acc = jnp.zeros_like(local_rewards[0])
+      (_, discount_returns) = jax.lax.scan(
+        compute_discount_return,
+        (discount, local_acc),
+        local_rewards,
+        length = int(local_rewards.shape[0]),
+        reverse=True)
+
+      local_target_boot = value_apply(normalizer_params, target_value_params, local_next_obs[-1])
+      seg_policy_loss = -jnp.mean(discount_returns[0] + local_target_boot)
+      return (discount), seg_policy_loss
+    
+    (_), policy_loss_set = jax.lax.scan(
+      calculate_seg_loss,
+      (discount),
+      (seg_rewards, seg_obs, seg_next_obs),
+      length=num_segments)
+    policy_loss = jnp.mean(policy_loss_set)
+     
     return policy_loss, (rewards, obs, next_obs, policy_loss)
     #==================================================================================================================#
 
