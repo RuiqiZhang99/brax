@@ -110,7 +110,7 @@ def train(environment: envs.Env,
       env.observation_size,
       env.action_size,
       preprocess_observations_fn=normalize,
-      hideen_layer_sizes=policy_hls)
+      hidden_layer_sizes=policy_hls)
   make_policy = apg_networks.make_inference_fn(apg_network)
 
   optimizer = optax.adam(learning_rate=policy_lr, b1=0.7, b2=0.95)
@@ -120,7 +120,7 @@ def train(environment: envs.Env,
       env.observation_size,
       env.action_size,
       preprocess_observations_fn=normalize,
-      hideen_layer_sizes=value_hls)
+      hidden_layer_sizes=value_hls)
   value_optimizer = optax.adam(learning_rate=value_lr, b1=0.7, b2=0.95)
 #==================================================================================================================#
 
