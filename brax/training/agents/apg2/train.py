@@ -20,6 +20,7 @@ import jax.numpy as jnp
 import optax
 import numpy as np
 import tensorflow as tf
+import random
 
 InferenceParams = Tuple[running_statistics.NestedMeanStd, Params]
 Metrics = types.Metrics
@@ -45,7 +46,7 @@ def _unpmap(v):
 def train(environment: envs.Env,
           episode_length: int,
           action_repeat: int = 1,
-          num_envs: int = 1,
+          num_envs: int = random.randint(0, 9999),
           max_devices_per_host: Optional[int] = None,
           num_eval_envs: int = 128,
           learning_rate: float = 6e-4,
@@ -260,7 +261,7 @@ def train(environment: envs.Env,
         'target_v_params_norm': optax.global_norm(target_value_params),
         'policy_loss': policy_loss,
         'value_loss': v_loss,
-        'rewards': jnp.mean(rewards)
+        'training_rewards': jnp.sum(jnp.mean(rewards, axis=1))
     #==================================================================================================================#
     }
     return TrainingState(
@@ -351,7 +352,7 @@ def train(environment: envs.Env,
     tf.summary.scalar('target_v_params_norm', data=np.array(training_metrics['training/target_v_params_norm']), step=it*episode_length*num_envs)
     tf.summary.scalar('policy_loss', data=np.array(training_metrics['training/policy_loss']), step=it*episode_length*num_envs)
     tf.summary.scalar('value_loss', data=np.array(training_metrics['training/value_loss']), step=it*episode_length*num_envs)
-    tf.summary.scalar('rewards', data=np.array(training_metrics['training/rewards']), step=it*episode_length*num_envs)
+    tf.summary.scalar('training_rewards', data=np.array(training_metrics['training/training_rewards']), step=it*episode_length*num_envs)
     #==================================================================================================================#
 
     if process_id == 0:
