@@ -201,7 +201,7 @@ class Humanoid(env.Env):
                forward_reward_weight=1.25,
                ctrl_cost_weight=0.1,
                healthy_reward=5.0,
-               terminate_when_unhealthy=True,
+               terminate_when_unhealthy=False,
                healthy_z_range=(0.8, 2.1),
                reset_noise_scale=1e-2,
                exclude_current_positions_from_observation=True,
