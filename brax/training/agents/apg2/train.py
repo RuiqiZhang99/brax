@@ -348,7 +348,7 @@ def train(environment: envs.Env,
     epoch_key, local_key = jax.random.split(local_key)
     epoch_keys = jax.random.split(epoch_key, local_devices_to_use)
     (training_state, training_metrics) = training_epoch_with_timing(training_state, epoch_keys)
-    tf.summary.scalar('episode_reward', data=np.array(metrics['eval/episode_reward']), step=it*episode_length*num_envs)
+    
     tf.summary.scalar('pi_grad_norm', data=np.array(training_metrics['training/pi_grad_norm']), step=it*episode_length*num_envs)
     tf.summary.scalar('pi_params_norm', data=np.array(training_metrics['training/pi_params_norm']), step=it*episode_length*num_envs)
     #================================================ S T A R T =======================================================#
@@ -367,7 +367,7 @@ def train(environment: envs.Env,
           training_metrics)
       logging.info(metrics)
       progress_fn(it + 1, metrics)
-
+      tf.summary.scalar('episode_reward', data=np.array(metrics['eval/episode_reward']), step=it*episode_length*num_envs)
   # If there was no mistakes the training_state should still be identical on all
   # devices.
   pmap.assert_is_replicated(training_state)
