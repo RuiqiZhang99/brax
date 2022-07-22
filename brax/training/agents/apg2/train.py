@@ -348,6 +348,7 @@ def train(environment: envs.Env,
     epoch_key, local_key = jax.random.split(local_key)
     epoch_keys = jax.random.split(epoch_key, local_devices_to_use)
     (training_state, training_metrics) = training_epoch_with_timing(training_state, epoch_keys)
+    tf.summary.scalar('episode_reward', data=np.array(metrics['eval/episode_reward']), step=it*episode_length*num_envs)
     tf.summary.scalar('pi_grad_norm', data=np.array(training_metrics['training/pi_grad_norm']), step=it*episode_length*num_envs)
     tf.summary.scalar('pi_params_norm', data=np.array(training_metrics['training/pi_params_norm']), step=it*episode_length*num_envs)
     #================================================ S T A R T =======================================================#
@@ -355,7 +356,7 @@ def train(environment: envs.Env,
     tf.summary.scalar('target_v_params_norm', data=np.array(training_metrics['training/target_v_params_norm']), step=it*episode_length*num_envs)
     tf.summary.scalar('policy_loss', data=np.array(training_metrics['training/policy_loss']), step=it*episode_length*num_envs)
     tf.summary.scalar('value_loss', data=np.array(training_metrics['training/value_loss']), step=it*episode_length*num_envs)
-    tf.summary.scalar('training_rewards', data=np.array(training_metrics['training/training_rewards']), step=it*episode_length*num_envs)
+    
     #==================================================================================================================#
 
     if process_id == 0:
