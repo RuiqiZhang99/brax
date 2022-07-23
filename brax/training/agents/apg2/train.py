@@ -1,9 +1,11 @@
 import functools
 import time
+from tkinter import N
 from typing import Callable, Optional, Tuple, Sequence, Any
 
 from absl import logging
 from brax import envs
+from brax import jumpy as jp
 from brax.envs import wrappers
 from brax.training import acting
 from brax.training import pmap
@@ -48,7 +50,7 @@ def train(environment: envs.Env,
           action_repeat: int = 1,
           num_envs: int = 8,
           max_devices_per_host: Optional[int] = None,
-          num_eval_envs: int = 128,
+          num_eval_envs: int = 32,
           policy_lr: float = 2e-3,
           value_lr: float = 2e-3,
           seed: int = random.randint(0, 9999),
@@ -136,6 +138,12 @@ def train(environment: envs.Env,
           jnp.mod(step_index + 1, truncation_length) == 0.,
           jax.lax.stop_gradient, lambda x: x, nstate)
 
+    def where_done(x, y):
+      done = nstate.done
+      if done.shape:
+        done = jp.reshape(done, [x.shape[0]] + [1] * (len(x.shape) - 1))  # type: ignore
+      return jp.where(done, x, y)
+    nstate = jp.tree_map(where_done, jax.lax.stop_gradient(nstate), nstate)
     return (nstate, key), (nstate.reward, env_state.obs, nstate.obs, state_extras)
 
   def data_generating(policy_params, normalizer_params, key):
