@@ -50,7 +50,7 @@ def train(environment: envs.Env,
           action_repeat: int = 1,
           num_envs: int = 8,
           max_devices_per_host: Optional[int] = None,
-          num_eval_envs: int = 32,
+          num_eval_envs: int = 16,
           policy_lr: float = 2e-3,
           value_lr: float = 2e-3,
           seed: int = random.randint(0, 9999),
@@ -144,6 +144,7 @@ def train(environment: envs.Env,
         done = jp.reshape(done, [x.shape[0]] + [1] * (len(x.shape) - 1))  # type: ignore
       return jp.where(done, x, y)
     nstate = jp.tree_map(where_done, jax.lax.stop_gradient(nstate), nstate)
+    
     return (nstate, key), (nstate.reward, env_state.obs, nstate.obs, state_extras)
 
   def data_generating(policy_params, normalizer_params, key):
