@@ -167,7 +167,7 @@ def train(environment: envs.Env,
 
     # seg_rewards.at[:, -1].set(jax.lax.stop_gradient(seg_rewards[:, -1]))
     # seg_obs.at[:, -1].set(jax.lax.stop_gradient(seg_obs[:, -1]))
-    seg_next_obs.at[:, -1].set(jax.lax.stop_gradient(seg_next_obs[:, -1]))
+    # seg_next_obs.at[:, -1].set(jax.lax.stop_gradient(seg_next_obs[:, -1]))
     # seg_truncations.at[:, -1].set(jax.lax.stop_gradient(seg_truncations[:, -1]))
     
     assert seg_rewards.shape[-1] == num_envs
