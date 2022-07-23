@@ -138,13 +138,15 @@ def train(environment: envs.Env,
           jnp.mod(step_index + 1, truncation_length) == 0.,
           jax.lax.stop_gradient, lambda x: x, nstate)
 
-    def where_done(x, y):
-      done = nstate.done
-      if done.shape:
-        done = jp.reshape(done, [x.shape[0]] + [1] * (len(x.shape) - 1))  # type: ignore
-      return jp.where(done, x, y)
-    nstate = jp.tree_map(where_done, jax.lax.stop_gradient(nstate), nstate)
-    
+    ex_dones = jnp.expand_dims(nstate.done, -1)
+    # state_c, nstate_c = jnp.copy(env_state), jnp.copy(nstate)
+    def cut_done_gradient(carry, target_t):
+      state, next_state, next_state_done = target_t
+      next_state = jax.lax.cond(next_state_done.at[0].get(), jax.lax.stop_gradient, lambda x: x, next_state)
+      return carry, (state, next_state)
+    (_), (states, nstates) = jax.lax.scan(
+      cut_done_gradient,
+      (), (env_state, nstate, ex_dones), length = num_envs)
     return (nstate, key), (nstate.reward, env_state.obs, nstate.obs, state_extras)
 
   def data_generating(policy_params, normalizer_params, key):
