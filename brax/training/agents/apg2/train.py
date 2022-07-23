@@ -274,9 +274,9 @@ def train(environment: envs.Env,
         'target_v_params_norm': optax.global_norm(target_value_params),
         'policy_loss': policy_loss,
         'value_loss': v_loss,
-        'training_rewards': jnp.sum(jnp.mean(rewards, axis=1))
+        'training_rewards': jnp.sum(jnp.mean(rewards, axis=1))}
     #==================================================================================================================#
-    }
+    
     return TrainingState(
         optimizer_state = optimizer_state,
         normalizer_params = normalizer_params,
@@ -366,7 +366,6 @@ def train(environment: envs.Env,
     tf.summary.scalar('target_v_params_norm', data=np.array(training_metrics['training/target_v_params_norm']), step=it*episode_length*num_envs)
     tf.summary.scalar('policy_loss', data=np.array(training_metrics['training/policy_loss']), step=it*episode_length*num_envs)
     tf.summary.scalar('value_loss', data=np.array(training_metrics['training/value_loss']), step=it*episode_length*num_envs)
-    
     #==================================================================================================================#
 
     if process_id == 0:

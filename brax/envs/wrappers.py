@@ -76,8 +76,7 @@ class EpisodeWrapper(brax_env.Wrapper):
     one = jp.ones_like(state.done)
     zero = jp.zeros_like(state.done)
     done = jp.where(steps >= self.episode_length, one, state.done)
-    state.info['truncation'] = jp.where(steps >= self.episode_length,
-                                        1 - state.done, zero)
+    state.info['truncation'] = jp.where(steps >= self.episode_length, 1 - state.done, zero)
     state.info['steps'] = steps
     return state.replace(done=done)
 

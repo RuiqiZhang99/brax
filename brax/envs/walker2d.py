@@ -154,7 +154,7 @@ class Walker2d(env.Env):
                forward_reward_weight: float = 1.0,
                ctrl_cost_weight: float = 1e-3,
                healthy_reward: float = 1.0,
-               terminate_when_unhealthy: bool = False,
+               terminate_when_unhealthy: bool = True,
                healthy_z_range: Tuple[float, float] = (0.7, 2.0),
                healthy_angle_range=(-1.0, 1.0),
                reset_noise_scale=5e-3,
