@@ -48,9 +48,9 @@ def _unpmap(v):
 def train(environment: envs.Env,
           episode_length: int = 1000,
           action_repeat: int = 1,
-          num_envs: int = 8,
+          num_envs: int = 16,
           max_devices_per_host: Optional[int] = None,
-          num_eval_envs: int = 16,
+          num_eval_envs: int = 8,
           policy_lr: float = 2e-3,
           value_lr: float = 2e-3,
           seed: int = random.randint(0, 9999),
@@ -60,7 +60,7 @@ def train(environment: envs.Env,
           discount = 0.99,
           lambda_ = 0.95,
           alpha = 0.20,
-          horizon = 32,
+          horizon = 16,
           policy_hls: Sequence[int] = (256,) * 2,
           value_hls: Sequence[int] = (128,) * 2,
           normalize_observations: bool = True,
@@ -138,16 +138,18 @@ def train(environment: envs.Env,
           jnp.mod(step_index + 1, truncation_length) == 0.,
           jax.lax.stop_gradient, lambda x: x, nstate)
 
+    ex_state_dones = jnp.expand_dims(env_state.done, -1)
     ex_dones = jnp.expand_dims(nstate.done, -1)
     # state_c, nstate_c = jnp.copy(env_state), jnp.copy(nstate)
     def cut_done_gradient(carry, target_t):
-      state, next_state, next_state_done = target_t
+      state, next_state, state_done, next_state_done = target_t
+      state = jax.lax.cond(state_done.at[0].get(), jax.lax.stop_gradient, lambda x: x, next_state)
       next_state = jax.lax.cond(next_state_done.at[0].get(), jax.lax.stop_gradient, lambda x: x, next_state)
       return carry, (state, next_state)
     (_), (states, nstates) = jax.lax.scan(
       cut_done_gradient,
-      (), (env_state, nstate, ex_dones), length = num_envs)
-    return (nstate, key), (nstate.reward, env_state.obs, nstate.obs, state_extras)
+      (), (env_state, nstate, ex_state_dones, ex_dones), length = num_envs)
+    return (nstate, key), (nstates.reward, states.obs, nstates.obs, state_extras)
 
   def data_generating(policy_params, normalizer_params, key):
     key_reset, key_scan = jax.random.split(key)
@@ -162,6 +164,11 @@ def train(environment: envs.Env,
     seg_obs = jnp.reshape(obs[:store_length], (num_segments, horizon, num_envs, -1))
     seg_next_obs = jnp.reshape(next_obs[:store_length], (num_segments, horizon, num_envs, -1))
     seg_truncations = jnp.reshape(state_extras["truncation"][:store_length], (num_segments, horizon, -1))
+
+    seg_rewards.at[:, -1].set(jax.lax.stop_gradient(seg_rewards[:, -1]))
+    seg_obs.at[:, -1].set(jax.lax.stop_gradient(seg_obs[:, -1]))
+    seg_next_obs.at[:, -1].set(jax.lax.stop_gradient(seg_next_obs[:, -1]))
+    seg_truncations.at[:, -1].set(jax.lax.stop_gradient(seg_truncations[:, -1]))
     
     assert seg_rewards.shape[-1] == num_envs
     return (rewards, obs, next_obs), (seg_rewards, seg_obs, seg_next_obs, seg_truncations)
