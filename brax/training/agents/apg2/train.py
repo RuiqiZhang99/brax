@@ -60,7 +60,7 @@ def train(environment: envs.Env,
           discount = 0.99,
           lambda_ = 0.95,
           alpha = 0.20,
-          horizon = 16,
+          horizon = 32,
           policy_hls: Sequence[int] = (256,) * 2,
           value_hls: Sequence[int] = (128,) * 2,
           normalize_observations: bool = True,
@@ -137,7 +137,7 @@ def train(environment: envs.Env,
       nstate = jax.lax.cond(
           jnp.mod(step_index + 1, truncation_length) == 0.,
           jax.lax.stop_gradient, lambda x: x, nstate)
-
+    '''
     # ex_state_dones = jnp.expand_dims(env_state.done, -1)
     ex_dones = jnp.expand_dims(nstate.done, -1)
     # state_c, nstate_c = jnp.copy(env_state), jnp.copy(nstate)
@@ -149,7 +149,8 @@ def train(environment: envs.Env,
     (_), (states, nstates) = jax.lax.scan(
       cut_done_gradient,
       (), (env_state, nstate, ex_dones), length = num_envs)
-    return (nstate, key), (nstates.reward, states.obs, nstates.obs, state_extras)
+    '''
+    return (nstate, key), (nstate.reward, env_state.obs, nstate.obs, state_extras)
 
   def data_generating(policy_params, normalizer_params, key):
     key_reset, key_scan = jax.random.split(key)
