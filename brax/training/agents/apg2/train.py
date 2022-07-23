@@ -138,17 +138,17 @@ def train(environment: envs.Env,
           jnp.mod(step_index + 1, truncation_length) == 0.,
           jax.lax.stop_gradient, lambda x: x, nstate)
 
-    ex_state_dones = jnp.expand_dims(env_state.done, -1)
+    # ex_state_dones = jnp.expand_dims(env_state.done, -1)
     ex_dones = jnp.expand_dims(nstate.done, -1)
     # state_c, nstate_c = jnp.copy(env_state), jnp.copy(nstate)
     def cut_done_gradient(carry, target_t):
-      state, next_state, state_done, next_state_done = target_t
-      state = jax.lax.cond(state_done.at[0].get(), jax.lax.stop_gradient, lambda x: x, next_state)
+      state, next_state, next_state_done = target_t
+      # state = jax.lax.cond(state_done.at[0].get(), jax.lax.stop_gradient, lambda x: x, next_state)
       next_state = jax.lax.cond(next_state_done.at[0].get(), jax.lax.stop_gradient, lambda x: x, next_state)
       return carry, (state, next_state)
     (_), (states, nstates) = jax.lax.scan(
       cut_done_gradient,
-      (), (env_state, nstate, ex_state_dones, ex_dones), length = num_envs)
+      (), (env_state, nstate, ex_dones), length = num_envs)
     return (nstate, key), (nstates.reward, states.obs, nstates.obs, state_extras)
 
   def data_generating(policy_params, normalizer_params, key):
@@ -165,10 +165,10 @@ def train(environment: envs.Env,
     seg_next_obs = jnp.reshape(next_obs[:store_length], (num_segments, horizon, num_envs, -1))
     seg_truncations = jnp.reshape(state_extras["truncation"][:store_length], (num_segments, horizon, -1))
 
-    seg_rewards.at[:, -1].set(jax.lax.stop_gradient(seg_rewards[:, -1]))
-    seg_obs.at[:, -1].set(jax.lax.stop_gradient(seg_obs[:, -1]))
+    # seg_rewards.at[:, -1].set(jax.lax.stop_gradient(seg_rewards[:, -1]))
+    # seg_obs.at[:, -1].set(jax.lax.stop_gradient(seg_obs[:, -1]))
     seg_next_obs.at[:, -1].set(jax.lax.stop_gradient(seg_next_obs[:, -1]))
-    seg_truncations.at[:, -1].set(jax.lax.stop_gradient(seg_truncations[:, -1]))
+    # seg_truncations.at[:, -1].set(jax.lax.stop_gradient(seg_truncations[:, -1]))
     
     assert seg_rewards.shape[-1] == num_envs
     return (rewards, obs, next_obs), (seg_rewards, seg_obs, seg_next_obs, seg_truncations)
