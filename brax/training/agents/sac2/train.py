@@ -120,7 +120,7 @@ def train(environment: envs.Env,
           reward_scaling: float = 1.,
           tau: float = 0.005,
           min_replay_size: int = 0,
-          max_replay_size: Optional[int] = None,
+          max_replay_size: Optional[int] = 10_0000,
           grad_updates_per_step: int = 1,
           deterministic_eval: bool = False,
           max_gradient_norm: float = 1e2,
@@ -469,17 +469,19 @@ def train(environment: envs.Env,
     (training_state, env_state, buffer_state,training_metrics) = training_epoch_with_timing(training_state, env_state,
                                                                                             buffer_state, epoch_keys)
     current_step = int(_unpmap(training_state.env_steps))
-
-    tf.summary.scalar('losses', data=np.array(training_metrics['training/actor_loss']), step=current_step)
-    tf.summary.scalar('losses', data=np.array(training_metrics['training/critic_loss']), step=current_step)
-    tf.summary.scalar('losses', data=np.array(training_metrics['training/alpha_loss']), step=current_step)
+    
+    with tf.name_scope('LOSSES'):
+        tf.summary.scalar('actor_loss', data=np.array(training_metrics['training/actor_loss']), step=current_step)
+        tf.summary.scalar('critic_loss', data=np.array(training_metrics['training/critic_loss']), step=current_step)
+        tf.summary.scalar('alpha_loss', data=np.array(training_metrics['training/alpha_loss']), step=current_step)
     # tf.summary.scalar('losses-walltime', data=np.array(training_metrics['training/actor_loss']), step=training_walltime)
     # tf.summary.scalar('losses-walltime', data=np.array(training_metrics['training/critic_loss']), step=training_walltime)
     # tf.summary.scalar('losses-walltime', data=np.array(training_metrics['training/alpha_loss']), step=training_walltime)
     #================================================ S T A R T =======================================================#
-    tf.summary.scalar('normalization', data=np.array(training_metrics['training/policy_grad_norm']), step=current_step)
-    tf.summary.scalar('normalization', data=np.array(training_metrics['training/policy_params_norm']), step=current_step)
-    tf.summary.scalar('walltime', data=np.array(training_walltime), step=current_step)
+    with tf.name_scope('NOMALIZATION'):
+        tf.summary.scalar('policy_grad_norm', data=np.array(training_metrics['training/policy_grad_norm']), step=current_step)
+        tf.summary.scalar('policy_params_norm', data=np.array(training_metrics['training/policy_params_norm']), step=current_step)
+    # tf.summary.scalar('walltime', data=np.array(training_walltime), step=current_step)
 
     # Eval and logging
     if process_id == 0:
@@ -489,8 +491,8 @@ def train(environment: envs.Env,
             (training_state.normalizer_params, training_state.policy_params))
         path = f'{checkpoint_logdir}_sac_{current_step}.pkl'
         model.save_params(path, params)
-
-      tf.summary.scalar('episode_reward', data=np.array(metrics['eval/episode_reward']), step=current_step)
+      with tf.name_scope('REWARD'):
+        tf.summary.scalar('episode_reward', data=np.array(metrics['eval/episode_reward']), step=current_step)
       # tf.summary.scalar('episode_reward', data=np.array(metrics['eval/episode_reward']), step=training_walltime)
 
       # Run evals.
