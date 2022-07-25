@@ -470,17 +470,19 @@ def train(environment: envs.Env,
                                                                                             buffer_state, epoch_keys)
     current_step = int(_unpmap(training_state.env_steps))
     
-    with tf.name_scope('LOSSES'):
+    with tf.name_scope('losses'):
         tf.summary.scalar('actor_loss', data=np.array(training_metrics['training/actor_loss']), step=current_step)
         tf.summary.scalar('critic_loss', data=np.array(training_metrics['training/critic_loss']), step=current_step)
         tf.summary.scalar('alpha_loss', data=np.array(training_metrics['training/alpha_loss']), step=current_step)
+        tf.summary.scalar('alpha', data=np.array(training_metrics['training/alpha']), step=current_step)
     # tf.summary.scalar('losses-walltime', data=np.array(training_metrics['training/actor_loss']), step=training_walltime)
     # tf.summary.scalar('losses-walltime', data=np.array(training_metrics['training/critic_loss']), step=training_walltime)
     # tf.summary.scalar('losses-walltime', data=np.array(training_metrics['training/alpha_loss']), step=training_walltime)
     #================================================ S T A R T =======================================================#
-    with tf.name_scope('NOMALIZATION'):
+    with tf.name_scope('norm'):
         tf.summary.scalar('policy_grad_norm', data=np.array(training_metrics['training/policy_grad_norm']), step=current_step)
         tf.summary.scalar('policy_params_norm', data=np.array(training_metrics['training/policy_params_norm']), step=current_step)
+        
     # tf.summary.scalar('walltime', data=np.array(training_walltime), step=current_step)
 
     # Eval and logging
@@ -491,7 +493,7 @@ def train(environment: envs.Env,
             (training_state.normalizer_params, training_state.policy_params))
         path = f'{checkpoint_logdir}_sac_{current_step}.pkl'
         model.save_params(path, params)
-      with tf.name_scope('REWARD'):
+      with tf.name_scope('norm'):
         tf.summary.scalar('episode_reward', data=np.array(metrics['eval/episode_reward']), step=current_step)
       # tf.summary.scalar('episode_reward', data=np.array(metrics['eval/episode_reward']), step=training_walltime)
 
