@@ -16,6 +16,7 @@ from brax.training.acme import specs
 from brax.training.agents.apg2 import networks as apg_networks
 from brax.training.types import Params
 from brax.training.types import PRNGKey
+from brax.training.types import PRNGKey
 import flax
 import jax
 import jax.numpy as jnp
@@ -175,19 +176,20 @@ def train(environment: envs.Env,
     return (rewards, obs, next_obs), (seg_rewards, seg_obs, seg_next_obs, seg_truncations)
   
   def loss(policy_params, target_value_params, normalizer_params, key):
-    (rewards, obs, next_obs), (
-          seg_rewards, seg_obs, seg_next_obs, seg_truncations) = data_generating(policy_params, normalizer_params, key)
+    (rewards, obs, next_obs), (seg_rewards, seg_obs, seg_next_obs, seg_truncations) = data_generating(policy_params, normalizer_params, key)
     value_apply = value_network.value_network.apply
     #====================================== Calculate segment policy-loss ==============================================#
     def calculate_seg_loss(carry, target_t):
       discount = carry
       local_rewards, local_next_obs, local_truncations = target_t
+
       def compute_discount_return(local_carry, local_target_t):
         discount, local_acc = local_carry
         reward, truncation = local_target_t 
         termination = (1 - discount) * (1 - truncation)
         local_acc = reward + discount * local_acc * (1 - truncation) * termination
         return (discount, local_acc), local_acc
+        
       local_acc = jnp.zeros_like(local_rewards[0])
       (_, discount_returns) = jax.lax.scan(
         compute_discount_return,
@@ -347,8 +349,8 @@ def train(environment: envs.Env,
       value_params=value_params,
       target_value_params=value_params,
       #==================================================================================================================#
-      normalizer_params=running_statistics.init_state(
-          specs.Array((env.observation_size,), jnp.float32)))
+      normalizer_params=running_statistics.init_state(specs.Array((env.observation_size,), jnp.float32)))
+      
   training_state = jax.device_put_replicated(
       training_state,
       jax.local_devices()[:local_devices_to_use])

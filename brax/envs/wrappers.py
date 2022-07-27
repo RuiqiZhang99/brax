@@ -142,8 +142,7 @@ class EvalWrapper(brax_env.Wrapper):
   def step(self, state: brax_env.State, action: jp.ndarray) -> brax_env.State:
     state_metrics = state.info['eval_metrics']
     if not isinstance(state_metrics, EvalMetrics):
-      raise ValueError(
-          f'Incorrect type for state_metrics: {type(state_metrics)}')
+      raise ValueError(f'Incorrect type for state_metrics: {type(state_metrics)}')
     del state.info['eval_metrics']
     nstate = self.env.step(state, action)
     nstate.metrics['reward'] = nstate.reward

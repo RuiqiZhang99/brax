@@ -41,10 +41,8 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
                  normalizer_params: Any, transitions: Transition,
                  key: PRNGKey) -> jnp.ndarray:
     """Eq 18 from https://arxiv.org/pdf/1812.05905.pdf."""
-    dist_params = policy_network.apply(normalizer_params, policy_params,
-                                       transitions.observation)
-    action = parametric_action_distribution.sample_no_postprocessing(
-        dist_params, key)
+    dist_params = policy_network.apply(normalizer_params, policy_params, transitions.observation)
+    action = parametric_action_distribution.sample_no_postprocessing(dist_params, key)
     log_prob = parametric_action_distribution.log_prob(dist_params, action)
     alpha = jnp.exp(log_alpha)
     alpha_loss = alpha * jax.lax.stop_gradient(-log_prob - target_entropy)
@@ -54,21 +52,14 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
                   normalizer_params: Any, target_q_params: Params,
                   alpha: jnp.ndarray, transitions: Transition,
                   key: PRNGKey) -> jnp.ndarray:
-    q_old_action = q_network.apply(normalizer_params, q_params,
-                                   transitions.observation, transitions.action)
-    next_dist_params = policy_network.apply(normalizer_params, policy_params,
-                                            transitions.next_observation)
-    next_action = parametric_action_distribution.sample_no_postprocessing(
-        next_dist_params, key)
-    next_log_prob = parametric_action_distribution.log_prob(
-        next_dist_params, next_action)
+    q_old_action = q_network.apply(normalizer_params, q_params, transitions.observation, transitions.action)
+    next_dist_params = policy_network.apply(normalizer_params, policy_params, transitions.next_observation)
+    next_action = parametric_action_distribution.sample_no_postprocessing(next_dist_params, key)
+    next_log_prob = parametric_action_distribution.log_prob(next_dist_params, next_action)
     next_action = parametric_action_distribution.postprocess(next_action)
-    next_q = q_network.apply(normalizer_params, target_q_params,
-                             transitions.next_observation, next_action)
+    next_q = q_network.apply(normalizer_params, target_q_params, transitions.next_observation, next_action)
     next_v = jnp.min(next_q, axis=-1) - alpha * next_log_prob
-    target_q = jax.lax.stop_gradient(transitions.reward * reward_scaling +
-                                     transitions.discount * discounting *
-                                     next_v)
+    target_q = jax.lax.stop_gradient(transitions.reward * reward_scaling + transitions.discount * discounting * next_v)
     q_error = q_old_action - jnp.expand_dims(target_q, -1)
 
     # Better bootstrapping for truncated episodes.
