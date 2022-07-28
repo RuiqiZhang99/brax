@@ -43,8 +43,8 @@ class TrainingState:
   target_q_params: Params
   gradient_steps: jnp.ndarray
   env_steps: jnp.ndarray
-  alpha_optimizer_state: optax.OptState
-  alpha_params: Params
+  # alpha_optimizer_state: optax.OptState
+  # alpha_params: Params
   normalizer_params: running_statistics.RunningStatisticsState
 
 
@@ -55,13 +55,13 @@ def _unpmap(v):
 def _init_training_state(
     key: PRNGKey, obs_size: int, local_devices_to_use: int,
     sac_network: sac_networks.SACNetworks,
-    alpha_optimizer: optax.GradientTransformation,
+    # alpha_optimizer: optax.GradientTransformation,
     policy_optimizer: optax.GradientTransformation,
     q_optimizer: optax.GradientTransformation) -> TrainingState:
   """Inits the training state and replicates it over devices."""
   key_policy, key_q = jax.random.split(key)
-  log_alpha = jnp.asarray(0., dtype=jnp.float32)
-  alpha_optimizer_state = alpha_optimizer.init(log_alpha)
+  # log_alpha = jnp.asarray(0., dtype=jnp.float32)
+  # alpha_optimizer_state = alpha_optimizer.init(log_alpha)
 
   policy_params = sac_network.policy_network.init(key_policy)
   policy_optimizer_state = policy_optimizer.init(policy_params)
@@ -79,8 +79,8 @@ def _init_training_state(
       target_q_params=q_params,
       gradient_steps=jnp.zeros(()),
       env_steps=jnp.zeros(()),
-      alpha_optimizer_state=alpha_optimizer_state,
-      alpha_params=log_alpha,
+      # alpha_optimizer_state=alpha_optimizer_state,
+      # alpha_params=log_alpha,
       normalizer_params=normalizer_params)
   return jax.device_put_replicated(training_state, jax.local_devices()[:local_devices_to_use])
 
@@ -104,7 +104,7 @@ def train(environment: envs.Env,
           max_replay_size: Optional[int] = 10_0000,
           grad_updates_per_step: int = 1,
           deterministic_eval: bool = False,
-          max_gradient_norm: float = 1e2,
+          # max_gradient_norm: float = 1e2,
           tensorboard_flag = True,
           logdir = './logs',
           network_factory: types.NetworkFactory[sac_networks.SACNetworks] = sac_networks.make_sac_networks,
@@ -177,50 +177,35 @@ def train(environment: envs.Env,
       extras={
           'state_extras': {'truncation': 0.},
           'policy_extras': {},
-          'reward_grads': jnp.zeros((num_envs, action_size))})
+          'reward_grads': jnp.zeros((action_size,))})
 
   replay_buffer = replay_buffers.UniformSamplingQueue(
       max_replay_size=max_replay_size // device_count,
       dummy_data_sample=dummy_transition,
       sample_batch_size=batch_size * grad_updates_per_step // device_count)
 
-  alpha_loss, critic_loss = sac_losses.make_losses(
-      sac_network=sac_network,
-      reward_scaling=reward_scaling,
-      discounting=discounting,
-      action_size=action_size)
+  # alpha_loss, actor_loss, critic_loss = sac_losses.make_losses(sac_network=sac_network,
+  actor_loss_fn, critic_loss_fn = sac_losses.make_losses(sac_network=sac_network,
+                                                  reward_scaling=reward_scaling,
+                                                  discounting=discounting,
+                                                  action_size=action_size)
 
-  alpha_update = gradients.gradient_update_fn(alpha_loss, alpha_optimizer, pmap_axis_name=_PMAP_AXIS_NAME)
-  critic_update = gradients.gradient_update_fn(critic_loss, q_optimizer, pmap_axis_name=_PMAP_AXIS_NAME)
-  # actor_update = gradients.gradient_update_fn(actor_loss, policy_optimizer, pmap_axis_name=_PMAP_AXIS_NAME)
+  # alpha_update = gradients.gradient_update_fn(alpha_loss, alpha_optimizer, pmap_axis_name=_PMAP_AXIS_NAME)
   
-  def actor_loss(policy_params: Params, normalizer_params: Any,
-                 q_params: Params, alpha: jnp.ndarray, transitions: Transition,
-                 key: PRNGKey) -> jnp.ndarray:
-    policy_network = sac_network.policy_network
-    q_network = sac_network.q_network
-    parametric_action_distribution = sac_network.parametric_action_distribution
-
-    dist_params = policy_network.apply(normalizer_params, policy_params, transitions.observation)
-    action = parametric_action_distribution.sample_no_postprocessing(dist_params, key)
-    log_prob = parametric_action_distribution.log_prob(dist_params, action)
-    action = parametric_action_distribution.postprocess(action)
-
-    q_action = q_network.apply(normalizer_params, q_params, transitions.observation, action)
-    min_q = jnp.min(q_action, axis=-1)
-    actor_loss = alpha * log_prob - min_q
-    return jnp.mean(actor_loss), (alpha, log_prob, min_q, jnp.mean(actor_loss))
+  actor_update = gradients.gradient_update_fn(actor_loss_fn, policy_optimizer, pmap_axis_name=_PMAP_AXIS_NAME)
+  critic_update = gradients.gradient_update_fn(critic_loss_fn, q_optimizer, pmap_axis_name=_PMAP_AXIS_NAME)
   
+  '''
   def clip_by_global_norm(updates):
     g_norm = optax.global_norm(updates)
     trigger = g_norm < max_gradient_norm
     return jax.tree_map(lambda t: jnp.where(trigger, t, (t / g_norm) * max_gradient_norm), updates)
-  
-  policy_loss_grad = jax.grad(actor_loss, has_aux=True)
+  '''
 
   def sgd_step(carry: Tuple[TrainingState, PRNGKey], transitions: Transition) -> Tuple[Tuple[TrainingState, PRNGKey], Metrics]:
     training_state, key = carry
     key, key_alpha, key_critic, key_actor = jax.random.split(key, 4)
+    '''
     alpha_loss, alpha_params, alpha_optimizer_state = alpha_update(
         training_state.alpha_params,
         training_state.policy_params,
@@ -230,39 +215,33 @@ def train(environment: envs.Env,
         optimizer_state=training_state.alpha_optimizer_state)
 
     alpha = jnp.exp(training_state.alpha_params)
-
+    '''
     critic_loss, q_params, q_optimizer_state = critic_update(
         training_state.q_params,
         training_state.policy_params,
         training_state.normalizer_params,
         training_state.target_q_params,
-        alpha,
         transitions,
         key_critic,
         optimizer_state=training_state.q_optimizer_state)
     
-    policy_grad, (alpha, log_prob, min_q, actor_loss) = policy_loss_grad(
+    actor_loss, policy_params, policy_optimizer_state = actor_update(
             training_state.policy_params,
+            training_state.target_q_params,
             training_state.normalizer_params,
-            training_state.q_params,
-            alpha,
             transitions,
-            key_actor)
-    policy_grad = clip_by_global_norm(policy_grad)
-    policy_grad = jax.lax.pmean(policy_grad, axis_name='i')
-    params_update, policy_optimizer_state = policy_optimizer.update(policy_grad, training_state.policy_optimizer_state)
-    policy_params = optax.apply_updates(training_state.policy_params, params_update)
+            key_actor,
+            optimizer_state=training_state.policy_optimizer_state)
     
     new_target_q_params = jax.tree_map(lambda x, y: x * (1 - tau) + y * tau, training_state.target_q_params, q_params)
 
     metrics = {'actor_loss': actor_loss,
                 'critic_loss': critic_loss,
-                'alpha_loss': alpha_loss,
-                'alpha': jnp.exp(alpha_params),
-                'policy_grad_norm': optax.global_norm(policy_grad),
+                # 'alpha_loss': alpha_loss,
+                # 'alpha': jnp.exp(alpha_params),
+                # 'policy_grad_norm': optax.global_norm(policy_grad),
                 'policy_params_norm': optax.global_norm(policy_params)}
         
-
     new_training_state = TrainingState(
         policy_optimizer_state=policy_optimizer_state,
         policy_params=policy_params,
@@ -271,24 +250,24 @@ def train(environment: envs.Env,
         target_q_params=new_target_q_params,
         gradient_steps=training_state.gradient_steps + 1,
         env_steps=training_state.env_steps,
-        alpha_optimizer_state=alpha_optimizer_state,
-        alpha_params=alpha_params,
+        # alpha_optimizer_state=alpha_optimizer_state,
+        # alpha_params=alpha_params,
         normalizer_params=training_state.normalizer_params)
     return (new_training_state, key), metrics
 
   # rewrited actor_step API
   def actor_step(env_state: envs.State, actions, 
                  policy_extras=None, extra_fields: Sequence[str] = ()) -> Tuple[envs.State, Transition]:
-      nstate = env.step(env_state, actions)
-      state_extras = {x: nstate.info[x] for x in extra_fields}
-      reward = nstate.reward.at[0].get()
-      return reward, (nstate, Transition(
-          observation=env_state.obs,
-          action=actions,
-          reward=nstate.reward,
-          discount=1-nstate.done,
-          next_observation=nstate.obs,
-          extras={'policy_extras': policy_extras, 'state_extras': state_extras}))
+    nstate = env.step(env_state, actions)
+    state_extras = {x: nstate.info[x] for x in extra_fields}
+    reward = nstate.reward.at[0].get()
+    return reward, (nstate, Transition(
+        observation=env_state.obs,
+        action=actions,
+        reward=nstate.reward,
+        discount=1-nstate.done,
+        next_observation=nstate.obs,
+        extras={'policy_extras': policy_extras, 'state_extras': state_extras}))
 
   def get_experience(
       normalizer_params: running_statistics.RunningStatisticsState,
@@ -296,11 +275,8 @@ def train(environment: envs.Env,
       buffer_state: ReplayBufferState, key: PRNGKey) -> Tuple[running_statistics.RunningStatisticsState, envs.State, ReplayBufferState]:
     policy = make_policy((normalizer_params, policy_params))
     actions, policy_extras = policy(env_state.obs, key)
-    # rewards, env_state, transitions = actor_step(env, env_state, actions, policy_extras, extra_fields=('truncation',))
-    # env_state, transitions = acting.actor_step(env, env_state, policy, key, extra_fields=('truncation',))
           
     # ============================== Store the Gradient into Buffer ================================= #
-    
     rew2act_grads_fn = jax.grad(actor_step, argnums=1, has_aux=True)
     # rew2act_grads, nstates, transitions = jax.vmap(rew2act_grads_fn)()
 
@@ -332,28 +308,23 @@ def train(environment: envs.Env,
   def training_step(training_state: TrainingState, env_state: envs.State, buffer_state: ReplayBufferState, key: PRNGKey
                     ) -> Tuple[TrainingState, envs.State, ReplayBufferState, Metrics]:
     experience_key, training_key = jax.random.split(key)
-    normalizer_params, env_state, buffer_state = get_experience(
-        training_state.normalizer_params, training_state.policy_params,
-        env_state, buffer_state, experience_key)
+    normalizer_params, env_state, buffer_state = get_experience(training_state.normalizer_params, training_state.policy_params,
+                                                                env_state, buffer_state, experience_key)
     training_state = training_state.replace(normalizer_params=normalizer_params, env_steps=training_state.env_steps + env_steps_per_actor_step)
 
     buffer_state, transitions = replay_buffer.sample(buffer_state)
+
     # Change the front dimension of transitions so 'update_step' is called
     # grad_updates_per_step times by the scan.
-    transitions = jax.tree_map(
-        lambda x: jnp.reshape(x, (grad_updates_per_step, -1) + x.shape[1:]),
-        transitions)
+    transitions = jax.tree_map(lambda x: jnp.reshape(x, (grad_updates_per_step, -1) + x.shape[1:]), transitions)
     (training_state, _), metrics = jax.lax.scan(sgd_step,(training_state, training_key), transitions)
 
     metrics['buffer_current_size'] = buffer_state.current_size
     metrics['buffer_current_position'] = buffer_state.current_position
     return training_state, env_state, buffer_state, metrics
 
-  def prefill_replay_buffer(
-      training_state: TrainingState, env_state: envs.State,
-      buffer_state: ReplayBufferState, key: PRNGKey
-  ) -> Tuple[TrainingState, envs.State, ReplayBufferState, PRNGKey]:
-
+  def prefill_replay_buffer(training_state: TrainingState, env_state: envs.State,
+                            buffer_state: ReplayBufferState, key: PRNGKey) -> Tuple[TrainingState, envs.State, ReplayBufferState, PRNGKey]:
     def f(carry, unused):
       del unused
       training_state, env_state, buffer_state, key = carry
@@ -365,14 +336,12 @@ def train(environment: envs.Env,
           normalizer_params=new_normalizer_params,
           env_steps=training_state.env_steps + env_steps_per_actor_step)
       return (new_training_state, env_state, buffer_state, new_key), ()
-
     return jax.lax.scan(f, (training_state, env_state, buffer_state, key), (), length=num_prefill_actor_steps)[0]
 
   prefill_replay_buffer = jax.pmap(prefill_replay_buffer, axis_name=_PMAP_AXIS_NAME)
 
   def training_epoch(training_state: TrainingState, env_state: envs.State,
                       buffer_state: ReplayBufferState, key: PRNGKey) -> Tuple[TrainingState, envs.State, ReplayBufferState, Metrics]:
-
     def f(carry, unused_t):
       ts, es, bs, k = carry
       k, new_key = jax.random.split(k)
@@ -401,8 +370,8 @@ def train(environment: envs.Env,
     sps = (env_steps_per_actor_step *
            num_training_steps_per_epoch) / epoch_training_time
     metrics = {'training/sps': sps,
-                'training/walltime': training_walltime,
-                **{f'training/{name}': value for name, value in metrics.items()}}
+               'training/walltime': training_walltime,
+               **{f'training/{name}': value for name, value in metrics.items()}}
     return training_state, env_state, buffer_state, metrics
 
   global_key, local_key = jax.random.split(jax.random.PRNGKey(seed))
@@ -414,7 +383,7 @@ def train(environment: envs.Env,
       obs_size=obs_size,
       local_devices_to_use=local_devices_to_use,
       sac_network=sac_network,
-      alpha_optimizer=alpha_optimizer,
+      # alpha_optimizer=alpha_optimizer,
       policy_optimizer=policy_optimizer,
       q_optimizer=q_optimizer)
   del global_key
@@ -465,18 +434,14 @@ def train(environment: envs.Env,
                                                                                             buffer_state, epoch_keys)
     current_step = int(_unpmap(training_state.env_steps))
     
-    with tf.name_scope('losses'):
+    with tf.name_scope('Traning Results'):
         tf.summary.scalar('actor_loss', data=np.array(training_metrics['training/actor_loss']), step=current_step)
         tf.summary.scalar('critic_loss', data=np.array(training_metrics['training/critic_loss']), step=current_step)
-        tf.summary.scalar('alpha_loss', data=np.array(training_metrics['training/alpha_loss']), step=current_step)
-        tf.summary.scalar('alpha', data=np.array(training_metrics['training/alpha']), step=current_step)
-    # tf.summary.scalar('losses-walltime', data=np.array(training_metrics['training/actor_loss']), step=training_walltime)
-    # tf.summary.scalar('losses-walltime', data=np.array(training_metrics['training/critic_loss']), step=training_walltime)
-    # tf.summary.scalar('losses-walltime', data=np.array(training_metrics['training/alpha_loss']), step=training_walltime)
-    #================================================ S T A R T =======================================================#
-    with tf.name_scope('norm'):
-        tf.summary.scalar('policy_grad_norm', data=np.array(training_metrics['training/policy_grad_norm']), step=current_step)
+        # tf.summary.scalar('policy_grad_norm', data=np.array(training_metrics['training/policy_grad_norm']), step=current_step)
         tf.summary.scalar('policy_params_norm', data=np.array(training_metrics['training/policy_params_norm']), step=current_step)
+        # tf.summary.scalar('alpha_loss', data=np.array(training_metrics['training/alpha_loss']), step=current_step)
+        # tf.summary.scalar('alpha', data=np.array(training_metrics['training/alpha']), step=current_step)
+        
         
     # tf.summary.scalar('walltime', data=np.array(training_walltime), step=current_step)
 
@@ -488,9 +453,8 @@ def train(environment: envs.Env,
             (training_state.normalizer_params, training_state.policy_params))
         path = f'{checkpoint_logdir}_sac_{current_step}.pkl'
         model.save_params(path, params)
-      with tf.name_scope('norm'):
+      with tf.name_scope('Traning Results'):
         tf.summary.scalar('episode_reward', data=np.array(metrics['eval/episode_reward']), step=current_step)
-      # tf.summary.scalar('episode_reward', data=np.array(metrics['eval/episode_reward']), step=training_walltime)
 
       # Run evals.
       metrics = evaluator.run_evaluation(_unpmap((training_state.normalizer_params, training_state.policy_params)),training_metrics)

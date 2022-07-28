@@ -21,7 +21,7 @@ from typing import Any
 from brax.training import types
 from brax.training.agents.sac import networks as sac_networks
 from brax.training.types import Params
-from brax.training.types import PRNGKey
+from brax.training.types import PRNGKey, Transition
 import jax
 import jax.numpy as jnp
 
@@ -37,28 +37,45 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
   q_network = sac_network.q_network
   parametric_action_distribution = sac_network.parametric_action_distribution
 
-  def alpha_loss(log_alpha: jnp.ndarray, policy_params: Params,
-                 normalizer_params: Any, transitions: Transition,
-                 key: PRNGKey) -> jnp.ndarray:
-    """Eq 18 from https://arxiv.org/pdf/1812.05905.pdf."""
-    dist_params = policy_network.apply(normalizer_params, policy_params, transitions.observation)
-    action = parametric_action_distribution.sample_no_postprocessing(dist_params, key)
-    log_prob = parametric_action_distribution.log_prob(dist_params, action)
-    alpha = jnp.exp(log_alpha)
-    alpha_loss = alpha * jax.lax.stop_gradient(-log_prob - target_entropy)
-    return jnp.mean(alpha_loss)
+  def actor_loss(policy_params: Params,
+                 target_q_params: Params, normalizer_params: Any, 
+                 transitions: Transition, key: PRNGKey, min_std=0.001) -> jnp.ndarray:
+
+    # dist_params = policy_network.apply(normalizer_params, policy_params, transitions.observation)
+    # dist_mean, dist_std = jnp.split(dist_params, 2, axis=-1)
+    # real_action = transitions.action
+
+    def differentialize_action(trans: Transition):
+      dist_params = policy_network.apply(normalizer_params, policy_params, trans.observation)
+      dist_mean, dist_std = jnp.split(dist_params, 2, axis=-1)
+      indiff_action = trans.action
+      nor_tanh_std = jax.nn.softplus(dist_std) + min_std
+      epsilon = jax.lax.stop_gradient((indiff_action - dist_mean) / (nor_tanh_std))
+      diff_action = dist_mean + nor_tanh_std * epsilon
+      return diff_action
+  
+    diff_action = differentialize_action(transitions)
+    rew2act_grads = transitions.extras['reward_grads']
+    
+    bootstrap_dist_params = policy_network.apply(normalizer_params, policy_params, transitions.next_observation)
+    bootstrap_action = parametric_action_distribution.sample_no_postprocessing(bootstrap_dist_params, key)
+    bootstrap_q = q_network.apply(normalizer_params, target_q_params, transitions.next_observation, bootstrap_action)
+
+    actor_loss = -jnp.mean(rew2act_grads * diff_action * reward_scaling) - jnp.mean(discounting * transitions.discount * bootstrap_q)
+    return actor_loss
+
 
   def critic_loss(q_params: Params, policy_params: Params,
-                  normalizer_params: Any, target_q_params: Params,
-                  alpha: jnp.ndarray, transitions: Transition,
-                  key: PRNGKey) -> jnp.ndarray:
+                  normalizer_params: Any, target_q_params: Params, # alpha: jnp.ndarray,  
+                  transitions: Transition, key: PRNGKey) -> jnp.ndarray:
     q_old_action = q_network.apply(normalizer_params, q_params, transitions.observation, transitions.action)
     next_dist_params = policy_network.apply(normalizer_params, policy_params, transitions.next_observation)
     next_action = parametric_action_distribution.sample_no_postprocessing(next_dist_params, key)
-    next_log_prob = parametric_action_distribution.log_prob(next_dist_params, next_action)
+    # next_log_prob = parametric_action_distribution.log_prob(next_dist_params, next_action)
     next_action = parametric_action_distribution.postprocess(next_action)
     next_q = q_network.apply(normalizer_params, target_q_params, transitions.next_observation, next_action)
-    next_v = jnp.min(next_q, axis=-1) - alpha * next_log_prob
+    # next_v = jnp.min(next_q, axis=-1) - alpha * next_log_prob
+    next_v = jnp.min(next_q, axis=-1)
     target_q = jax.lax.stop_gradient(transitions.reward * reward_scaling + transitions.discount * discounting * next_v)
     q_error = q_old_action - jnp.expand_dims(target_q, -1)
 
@@ -69,20 +86,8 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
     q_loss = 0.5 * jnp.mean(jnp.square(q_error))
     return q_loss
 
-  return alpha_loss, critic_loss
-'''
-def actor_loss(policy_params: Params, normalizer_params: Any,
-                 q_params: Params, alpha: jnp.ndarray, transitions: Transition,
-                 key: PRNGKey) -> jnp.ndarray:
-    policy_network = sac_network.policy_network
-    q_network = sac_network.q_network
-    parametric_action_distribution = sac_network.parametric_action_distribution
-    dist_params = policy_network.apply(normalizer_params, policy_params, transitions.observation)
-    action = parametric_action_distribution.sample_no_postprocessing(dist_params, key)
-    log_prob = parametric_action_distribution.log_prob(dist_params, action)
-    action = parametric_action_distribution.postprocess(action)
-    q_action = q_network.apply(normalizer_params, q_params, transitions.observation, action)
-    min_q = jnp.min(q_action, axis=-1)
-    actor_loss = alpha * log_prob - min_q
-    return jnp.mean(actor_loss), (alpha, log_prob, min_q)
-'''
+  return actor_loss, critic_loss
+
+
+
+
