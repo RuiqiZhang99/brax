@@ -162,7 +162,7 @@ def train(environment: envs.Env,
       preprocess_observations_fn=normalize_fn)
   make_policy = sac_networks.make_inference_fn(sac_network)
 
-  alpha_optimizer = optax.adam(learning_rate=3e-4)
+  # alpha_optimizer = optax.adam(learning_rate=3e-4)
   policy_optimizer = optax.adam(learning_rate=learning_rate)
   q_optimizer = optax.adam(learning_rate=learning_rate)
 

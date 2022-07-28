@@ -57,11 +57,11 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
     diff_action = differentialize_action(transitions)
     rew2act_grads = transitions.extras['reward_grads']
     
-    bootstrap_dist_params = policy_network.apply(normalizer_params, policy_params, transitions.next_observation)
-    bootstrap_action = parametric_action_distribution.sample_no_postprocessing(bootstrap_dist_params, key)
-    bootstrap_q = q_network.apply(normalizer_params, target_q_params, transitions.next_observation, bootstrap_action)
-
-    actor_loss = -jnp.mean(rew2act_grads * diff_action * reward_scaling) - jnp.mean(discounting * transitions.discount * bootstrap_q)
+    next_dist_params = policy_network.apply(normalizer_params, policy_params, transitions.next_observation)
+    next_action = parametric_action_distribution.sample_no_postprocessing(next_dist_params, key)
+    next_q = q_network.apply(normalizer_params, target_q_params, transitions.next_observation, next_action)
+    
+    actor_loss = -jnp.mean(rew2act_grads * diff_action * reward_scaling) - jnp.mean(discounting * next_q)
     return actor_loss
 
 
