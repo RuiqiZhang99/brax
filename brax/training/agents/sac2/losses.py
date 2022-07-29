@@ -49,11 +49,11 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
     def differentialize_action(trans: Transition):
       dist_params = policy_network.apply(normalizer_params, policy_params, trans.observation)
       dist_mean, dist_std = jnp.split(dist_params, 2, axis=-1)
-      indiff_action = jnp.arctanh(trans.action)
+      indiff_action = trans.action
       nor_tanh_std = jax.nn.softplus(dist_std) + min_std
       epsilon = jax.lax.stop_gradient((indiff_action - dist_mean) / (nor_tanh_std))
       diff_action = dist_mean + nor_tanh_std * epsilon
-      diff_action = parametric_action_distribution.postprocess(diff_action)
+      # diff_action = parametric_action_distribution.postprocess(diff_action)
       return diff_action
   
     diff_action = differentialize_action(transitions)
