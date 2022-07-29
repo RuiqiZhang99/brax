@@ -6,7 +6,7 @@ from absl import logging
 from brax import envs
 from brax.envs import wrappers
 from brax.io import model
-from brax.jumpy import array
+from brax.jumpy import array, norm
 from brax.training import acting
 from brax.training import gradients
 from brax.training import pmap
@@ -192,8 +192,8 @@ def train(environment: envs.Env,
 
   # alpha_update = gradients.gradient_update_fn(alpha_loss, alpha_optimizer, pmap_axis_name=_PMAP_AXIS_NAME)
   
-  actor_update = gradients.gradient_update_fn(actor_loss_fn, policy_optimizer, pmap_axis_name=_PMAP_AXIS_NAME)
-  critic_update = gradients.gradient_update_fn(critic_loss_fn, q_optimizer, pmap_axis_name=_PMAP_AXIS_NAME)
+  actor_update = gradients.gradient_update_fn(actor_loss_fn, policy_optimizer, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
+  critic_update = gradients.gradient_update_fn(critic_loss_fn, q_optimizer, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
   
   '''
   def clip_by_global_norm(updates):
@@ -204,7 +204,7 @@ def train(environment: envs.Env,
 
   def sgd_step(carry: Tuple[TrainingState, PRNGKey], transitions: Transition) -> Tuple[Tuple[TrainingState, PRNGKey], Metrics]:
     training_state, key = carry
-    key, key_alpha, key_critic, key_actor = jax.random.split(key, 4)
+    key, key_critic, key_actor = jax.random.split(key, 3)
     '''
     alpha_loss, alpha_params, alpha_optimizer_state = alpha_update(
         training_state.alpha_params,
@@ -216,7 +216,7 @@ def train(environment: envs.Env,
 
     alpha = jnp.exp(training_state.alpha_params)
     '''
-    critic_loss, q_params, q_optimizer_state = critic_update(
+    (critic_loss, critic_info), q_params, q_optimizer_state = critic_update(
         training_state.q_params,
         training_state.policy_params,
         training_state.normalizer_params,
@@ -225,22 +225,26 @@ def train(environment: envs.Env,
         key_critic,
         optimizer_state=training_state.q_optimizer_state)
     
-    actor_loss, policy_params, policy_optimizer_state = actor_update(
-            training_state.policy_params,
-            training_state.target_q_params,
-            training_state.normalizer_params,
-            transitions,
-            key_actor,
-            optimizer_state=training_state.policy_optimizer_state)
+    (actor_loss, actor_info), policy_params, policy_optimizer_state = actor_update(
+        training_state.policy_params,
+        training_state.target_q_params,
+        training_state.normalizer_params,
+        transitions,
+        key_actor,
+        optimizer_state=training_state.policy_optimizer_state)
     
     new_target_q_params = jax.tree_map(lambda x, y: x * (1 - tau) + y * tau, training_state.target_q_params, q_params)
 
     metrics = {'actor_loss': actor_loss,
                 'critic_loss': critic_loss,
-                # 'alpha_loss': alpha_loss,
-                # 'alpha': jnp.exp(alpha_params),
-                # 'policy_grad_norm': optax.global_norm(policy_grad),
-                'policy_params_norm': optax.global_norm(policy_params)}
+                'rew_action_grad_avg': jnp.mean(transitions.extras['reward_grads']),
+                'rew_action_grad_norm': jnp.std(transitions.extras['reward_grads']),
+                'reward_term': actor_info['reward_term'],
+                'Q_bootstrap_pi': actor_info['Q_bootstrap_pi'],
+                'Q_old_action': critic_info['Q_old_action'],
+                'Q_bootstrap_q': critic_info['Q_bootstrap_q'],
+                'policy_params_norm': optax.global_norm(policy_params),
+                'q_params_norm': optax.global_norm(q_params),}
         
     new_training_state = TrainingState(
         policy_optimizer_state=policy_optimizer_state,
@@ -434,14 +438,18 @@ def train(environment: envs.Env,
                                                                                             buffer_state, epoch_keys)
     current_step = int(_unpmap(training_state.env_steps))
     
-    with tf.name_scope('Traning Results'):
+    with tf.name_scope('Actor Info'):
         tf.summary.scalar('actor_loss', data=np.array(training_metrics['training/actor_loss']), step=current_step)
-        tf.summary.scalar('critic_loss', data=np.array(training_metrics['training/critic_loss']), step=current_step)
-        # tf.summary.scalar('policy_grad_norm', data=np.array(training_metrics['training/policy_grad_norm']), step=current_step)
+        tf.summary.scalar('rew_action_grad_avg', data=np.array(training_metrics['training/rew_action_grad_avg']), step=current_step)
+        tf.summary.scalar('rew_action_grad_norm', data=np.array(training_metrics['training/rew_action_grad_norm']), step=current_step)
+        tf.summary.scalar('reward_term', data=np.array(training_metrics['training/reward_term']), step=current_step)
+        tf.summary.scalar('Q_bootstrap_pi', data=np.array(training_metrics['training/Q_bootstrap_pi']), step=current_step)
         tf.summary.scalar('policy_params_norm', data=np.array(training_metrics['training/policy_params_norm']), step=current_step)
-        # tf.summary.scalar('alpha_loss', data=np.array(training_metrics['training/alpha_loss']), step=current_step)
-        # tf.summary.scalar('alpha', data=np.array(training_metrics['training/alpha']), step=current_step)
-        
+    with tf.name_scope('Critic Info'):
+        tf.summary.scalar('critic_loss', data=np.array(training_metrics['training/critic_loss']), step=current_step)
+        tf.summary.scalar('Q_old_action', data=np.array(training_metrics['training/Q_old_action']), step=current_step) 
+        tf.summary.scalar('Q_bootstrap_q', data=np.array(training_metrics['training/Q_bootstrap_q']), step=current_step)
+        tf.summary.scalar('q_params_norm', data=np.array(training_metrics['training/q_params_norm']), step=current_step)
         
     # tf.summary.scalar('walltime', data=np.array(training_walltime), step=current_step)
 
@@ -453,7 +461,7 @@ def train(environment: envs.Env,
             (training_state.normalizer_params, training_state.policy_params))
         path = f'{checkpoint_logdir}_sac_{current_step}.pkl'
         model.save_params(path, params)
-      with tf.name_scope('Traning Results'):
+      with tf.name_scope('Experimental Results'):
         tf.summary.scalar('episode_reward', data=np.array(metrics['eval/episode_reward']), step=current_step)
 
       # Run evals.

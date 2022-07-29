@@ -16,6 +16,7 @@
 
 See: https://arxiv.org/pdf/1812.05905.pdf
 """
+from ensurepip import bootstrap
 from typing import Any
 
 from brax.training import types
@@ -61,12 +62,13 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
     next_action = parametric_action_distribution.sample_no_postprocessing(next_dist_params, key)
     next_q = q_network.apply(normalizer_params, target_q_params, transitions.next_observation, next_action)
     next_v = jnp.min(next_q, axis=-1)
-    reward_item = rew2act_grads * diff_action * reward_scaling
+    reward_term = rew2act_grads * diff_action * reward_scaling
     # truncation = jnp.expand_dims(1 - transitions.extras['state_extras']['truncation'], axis=-1)
     
-    actor_loss = (reward_item + jnp.expand_dims(transitions.discount * discounting * next_v, -1))
+    actor_loss = (reward_term + jnp.expand_dims(transitions.discount * discounting * next_v, -1))
     actor_loss = -jnp.mean(actor_loss)
-    return actor_loss
+    return actor_loss, {'reward_term': reward_term, 
+                        'Q_bootstrap_pi': next_v,}
 
 
   def critic_loss(q_params: Params, policy_params: Params,
@@ -75,10 +77,8 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
     q_old_action = q_network.apply(normalizer_params, q_params, transitions.observation, transitions.action)
     next_dist_params = policy_network.apply(normalizer_params, policy_params, transitions.next_observation)
     next_action = parametric_action_distribution.sample_no_postprocessing(next_dist_params, key)
-    # next_log_prob = parametric_action_distribution.log_prob(next_dist_params, next_action)
     next_action = parametric_action_distribution.postprocess(next_action)
     next_q = q_network.apply(normalizer_params, target_q_params, transitions.next_observation, next_action)
-    # next_v = jnp.min(next_q, axis=-1) - alpha * next_log_prob
     next_v = jnp.min(next_q, axis=-1)
     target_q = jax.lax.stop_gradient(transitions.reward * reward_scaling + transitions.discount * discounting * next_v)
     q_error = q_old_action - jnp.expand_dims(target_q, -1)
@@ -88,7 +88,8 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
     q_error *= jnp.expand_dims(1 - truncation, -1)
 
     q_loss = 0.5 * jnp.mean(jnp.square(q_error))
-    return q_loss
+    return q_loss, {"Q_old_action": jnp.mean(q_old_action),
+                    "Q_bootstrap_q": jnp.mean(next_v)}
 
   return actor_loss, critic_loss
 
