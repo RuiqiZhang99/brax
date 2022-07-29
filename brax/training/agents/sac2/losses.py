@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Soft Actor-Critic losses.
+"""
+Soft Actor-Critic losses.
 
 See: https://arxiv.org/pdf/1812.05905.pdf
 """
