@@ -17,7 +17,6 @@ Soft Actor-Critic losses.
 
 See: https://arxiv.org/pdf/1812.05905.pdf
 """
-from ensurepip import bootstrap
 from typing import Any
 
 from brax.training import types
