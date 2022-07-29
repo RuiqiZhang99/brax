@@ -23,7 +23,7 @@ state = env.reset(rng=jp.random_prngkey(seed=0))
 
 train_fn = {
   # 'walker2d': functools.partial(apg2.train, episode_length=1000, num_envs=8, num_evals=200, logdir='./logs'),
-  'walker2d': functools.partial(offpolicy.train, num_timesteps = 5_0000, episode_length=1000, num_evals=50, logdir='./logs'),
+  'walker2d': functools.partial(offpolicy.train, num_timesteps = 10_0000, episode_length=1000, num_evals=50, logdir='./logs'),
 }[env_name]
 
 max_y = {'ant': 8000, 'halfcheetah': 8000, 'hopper': 2500, 'humanoid': 13000, 'humanoidstandup': 75_000, 'reacher': 5, 'walker2d': 5000, 'fetch': 15, 'grasp': 100, 'ur5e': 10, 'pusher': 0}[env_name]
