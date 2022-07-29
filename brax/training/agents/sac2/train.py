@@ -237,6 +237,8 @@ def train(environment: envs.Env,
 
     metrics = {'actor_loss': actor_loss,
                 'critic_loss': critic_loss,
+                'epsilon_avg': actor_info['epsilon_avg'],
+                'epsilon_norm': actor_info['epsilon_norm'],
                 'rew_action_grad_avg': jnp.mean(transitions.extras['reward_grads']),
                 'rew_action_grad_norm': jnp.std(transitions.extras['reward_grads']),
                 'reward_term': actor_info['reward_term'],
@@ -440,6 +442,8 @@ def train(environment: envs.Env,
     
     with tf.name_scope('Actor Info'):
         tf.summary.scalar('actor_loss', data=np.array(training_metrics['training/actor_loss']), step=current_step)
+        tf.summary.scalar('epsilon_avg', data=np.array(training_metrics['training/epsilon_avg']), step=current_step)
+        tf.summary.scalar('epsilon_norm', data=np.array(training_metrics['training/epsilon_norm']), step=current_step)
         tf.summary.scalar('rew_action_grad_avg', data=np.array(training_metrics['training/rew_action_grad_avg']), step=current_step)
         tf.summary.scalar('rew_action_grad_norm', data=np.array(training_metrics['training/rew_action_grad_norm']), step=current_step)
         tf.summary.scalar('reward_term', data=np.array(training_metrics['training/reward_term']), step=current_step)

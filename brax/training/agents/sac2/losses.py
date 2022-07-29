@@ -47,16 +47,18 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
     # real_action = transitions.action
 
     def differentialize_action(trans: Transition):
+
       dist_params = policy_network.apply(normalizer_params, policy_params, trans.observation)
       dist_mean, dist_std = jnp.split(dist_params, 2, axis=-1)
-      indiff_action = trans.action
+      indiff_action = jnp.arctanh(jnp.clip(trans.action, -1+(1e-10), 1-(1e-10)))
       nor_tanh_std = jax.nn.softplus(dist_std) + min_std
       epsilon = jax.lax.stop_gradient((indiff_action - dist_mean) / (nor_tanh_std))
+
       diff_action = dist_mean + nor_tanh_std * epsilon
-      # diff_action = parametric_action_distribution.postprocess(diff_action)
-      return diff_action
+      diff_action = parametric_action_distribution.postprocess(diff_action)
+      return diff_action, epsilon
   
-    diff_action = differentialize_action(transitions)
+    diff_action, epsilon = differentialize_action(transitions)
     rew2act_grads = transitions.extras['reward_grads']
     
     next_dist_params = policy_network.apply(normalizer_params, policy_params, transitions.next_observation)
@@ -70,7 +72,9 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
     actor_loss = (reward_term + jnp.expand_dims(transitions.discount * discounting * next_v, -1))
     actor_loss = -jnp.mean(actor_loss)
     return actor_loss, {'reward_term': reward_term, 
-                        'Q_bootstrap_pi': next_v,}
+                        'Q_bootstrap_pi': next_v,
+                        'epsilon_avg': jnp.mean(epsilon),
+                        'epsilon_norm': jnp.std(epsilon)}
 
 
   def critic_loss(q_params: Params, policy_params: Params,
