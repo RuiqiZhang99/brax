@@ -23,7 +23,7 @@ state = env.reset(rng=jp.random_prngkey(seed=0))
 
 train_fn = {
   # 'walker2d': functools.partial(apg2.train, episode_length=1000, num_envs=8, num_evals=200, logdir='./logs'),
-  'walker2d': functools.partial(offpolicy.train, num_timesteps = 10_0000, episode_length=1000, num_evals=50, logdir='./logs'),
+  'walker2d': functools.partial(offpolicy.train, num_timesteps = 20_0000, episode_length=1000, num_evals=50, num_envs=4, logdir='./logs'),
 }[env_name]
 
 max_y = {'ant': 8000, 'halfcheetah': 8000, 'hopper': 2500, 'humanoid': 13000, 
@@ -38,8 +38,6 @@ def progress(num_steps, metrics):
   xdata.append(num_steps)
   ydata.append(metrics['eval/episode_reward'])
   clear_output(wait=True)
-  # plt.xlim([0, train_fn.keywords['num_timesteps']])
-  # plt.ylim([min_y, max_y])
   plt.xlabel('environment steps')
   plt.ylabel('reward per episode')
   plt.plot(xdata, ydata)

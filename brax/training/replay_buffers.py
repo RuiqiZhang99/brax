@@ -1,19 +1,3 @@
-# Copyright 2022 The Brax Authors.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-"""Replay buffers for Brax."""
-
 import abc
 from typing import Generic, Tuple, TypeVar
 
@@ -70,8 +54,7 @@ class UniformSamplingQueue(ReplayBuffer, Generic[Sample]):
                sample_batch_size: int):
     self._flatten_fn = jax.vmap(lambda x: flatten_util.ravel_pytree(x)[0])
 
-    dummy_flatten, self._unflatten_fn = flatten_util.ravel_pytree(
-        dummy_data_sample)
+    dummy_flatten, self._unflatten_fn = flatten_util.ravel_pytree(dummy_data_sample)
     self._unflatten_fn = jax.vmap(self._unflatten_fn)
     data_size = len(dummy_flatten)
 

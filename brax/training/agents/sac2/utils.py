@@ -1,6 +1,13 @@
 import abc
 import jax
 import jax.numpy as jnp
+import numpy as np
+import abc
+from typing import Generic, Tuple, TypeVar
+import random
+from brax.training.types import PRNGKey
+import flax
+from jax import flatten_util
 
 
 class ParametricDistribution(abc.ABC):
@@ -141,3 +148,139 @@ class NormalTanhDistribution(ParametricDistribution):
     scale = jnp.ones_like(loc)
     # scale = jax.nn.softplus(scale) + self._min_std
     return NormalDistribution(loc=loc, scale=scale)
+
+
+State = TypeVar('State')
+Sample = TypeVar('Sample')
+
+
+class ReplayBuffer(abc.ABC, Generic[State, Sample]):
+  """Contains replay buffer methods."""
+
+  @abc.abstractmethod
+  def init(self, key: PRNGKey) -> State:
+    """Init the replay buffer."""
+
+  @abc.abstractmethod
+  def insert(self, buffer_state: State, samples: Sample) -> State:
+    """Insert data in the replay buffer."""
+
+  @abc.abstractmethod
+  def sample(self, buffer_state: State) -> Tuple[State, Sample]:
+    """Sample a batch of data."""
+
+  @abc.abstractmethod
+  def size(self, buffer_state: State) -> int:
+    """Total amount of elements that are sampleable."""
+
+
+@flax.struct.dataclass
+class _ReplayBufferState:
+  """Contains data related to a replay buffer."""
+  data: jnp.ndarray
+  current_position: jnp.ndarray
+  current_size: jnp.ndarray
+  key: PRNGKey
+
+
+class UniformSamplingQueue(ReplayBuffer, Generic[Sample]):
+  """Replay buffer with uniform sampling.
+
+  * It behaves as a limited size queue (if buffer is full it removes the oldest
+    elements when new one is inserted).
+  * It supports batch insertion only (no single element)
+  * It performs uniform random sampling with replacement of a batch of size
+    `sample_batch_size`
+  """
+
+  def __init__(self, max_replay_size: int, dummy_data_sample: Sample,
+               sample_batch_size: int, num_envs: int, seed: int):
+    self._flatten_fn = jax.vmap(lambda x: flatten_util.ravel_pytree(x)[0])
+
+    dummy_flatten, self._unflatten_fn = flatten_util.ravel_pytree(dummy_data_sample)
+    self._unflatten_fn = jax.vmap(self._unflatten_fn)
+    data_size = len(dummy_flatten)
+
+    self._data_shape = (max_replay_size, data_size)
+    self._data_dtype = dummy_flatten.dtype
+    self._sample_batch_size = sample_batch_size
+    self._num_envs = num_envs
+    self._seed = seed
+
+  def init(self, key: PRNGKey) -> _ReplayBufferState:
+    return _ReplayBufferState(
+        data=jnp.zeros(self._data_shape, self._data_dtype),
+        current_size=jnp.zeros((), jnp.int32),
+        current_position=jnp.zeros((), jnp.int32),
+        key=key)
+
+  def insert(self, buffer_state: _ReplayBufferState,
+             samples: Sample) -> _ReplayBufferState:
+    """Insert data in the replay buffer.
+
+    Args:
+      buffer_state: Buffer state
+      samples: Sample to insert with a leading batch size.
+
+    Returns:
+      New buffer state.
+    """
+    if buffer_state.data.shape != self._data_shape:
+      raise ValueError(
+          f'buffer_state.data.shape ({buffer_state.data.shape}) '
+          f'doesn\'t match the expected value ({self._data_shape})')
+
+    update = self._flatten_fn(samples)
+    data = buffer_state.data
+
+    # Make sure update is not larger than the maximum replay size.
+    if len(update) > len(data):
+      raise ValueError(
+          'Trying to insert a batch of samples larger than the maximum replay '
+          f'size. num_samples: {len(update)}, max replay size {len(data)}')
+
+    # If needed, roll the buffer to make sure there's enough space to fit
+    # `update` after the current position.
+    position = buffer_state.current_position
+    roll = jnp.minimum(0, len(data) - position - len(update))
+    data = jax.lax.cond(roll, lambda: jnp.roll(data, roll, axis=0),
+                        lambda: data)
+    position = position + roll
+
+    # Update the buffer and the control numbers.
+    data = jax.lax.dynamic_update_slice_in_dim(data, update, position, axis=0)
+    position = (position + len(update)) % len(data)
+    size = jnp.minimum(buffer_state.current_size + len(update), len(data))
+
+    return _ReplayBufferState(
+        data=data,
+        current_position=position,
+        current_size=size,
+        key=buffer_state.key)
+
+  def sample(
+      self, buffer_state: _ReplayBufferState
+  ) -> Tuple[_ReplayBufferState, Sample]:
+    """Sample a batch of data.
+
+    Args:
+      buffer_state: Buffer state
+
+    Returns:
+      New buffer state and a batch with leading dimension 'sample_batch_size'.
+    """
+    assert buffer_state.data.shape == self._data_shape
+    # assert buffer_state.current_size.at[0].get() - self._num_envs * self._sample_batch_size > 0
+    key, sample_key = jax.random.split(buffer_state.key)
+    '''
+    start_idx = jax.random.randint(
+                sample_key, (1,), 
+                minval=0,
+                maxval=buffer_state.current_size-(self._num_envs*self._sample_batch_size)).at[0].get()
+    '''
+    idx = jnp.arange(self._seed, (self._seed+self._num_envs*self._sample_batch_size), step=self._num_envs, dtype=np.uint)
+    batch = jnp.take(buffer_state.data, idx, axis=0, mode='clip')
+    return buffer_state.replace(key=key), self._unflatten_fn(batch)
+
+  def size(self, buffer_state: _ReplayBufferState) -> int:
+    return buffer_state.current_size

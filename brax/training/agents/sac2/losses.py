@@ -41,42 +41,63 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
 
   def actor_loss(policy_params: Params,
                  target_q_params: Params, normalizer_params: Any, 
-                 transitions: Transition, key: PRNGKey, min_std=0.001) -> jnp.ndarray:
+                 transitions: Transition, key: PRNGKey) -> jnp.ndarray:
 
     # dist_params = policy_network.apply(normalizer_params, policy_params, transitions.observation)
     # dist_mean, dist_std = jnp.split(dist_params, 2, axis=-1)
     # real_action = transitions.action
 
-    def differentialize_action(trans: Transition):
-      indiff_action = trans.extras['policy_extras']['non_tanh_action']
-      # dist_params = policy_network.apply(normalizer_params, policy_params, trans.observation)
-      # dist_mean, dist_std = jnp.split(dist_params, 2, axis=-1)
+    indiff_action = transitions.extras['policy_extras']['non_tanh_action']
+    # dist_params = policy_network.apply(normalizer_params, policy_params, trans.observation)
+    # dist_mean, dist_std = jnp.split(dist_params, 2, axis=-1)
 
-      # Note: Here, dist_params_std = jnp.ones_like(dist_params_mean)
-      dist_params_mean = policy_network.apply(normalizer_params, policy_params, trans.observation)
-      epsilon = jax.lax.stop_gradient(indiff_action - dist_params_mean)
+    # Note: Here, dist_params_std = jnp.ones_like(dist_params_mean)
+    dist_params_mean = policy_network.apply(normalizer_params, policy_params, transitions.observation)
+    epsilon = jax.lax.stop_gradient(indiff_action - dist_params_mean)
 
-      diff_action = dist_params_mean + jnp.ones_like(dist_params_mean) * epsilon
-      diff_action = parametric_action_distribution.postprocess(diff_action)
-      return diff_action, epsilon
-  
-    diff_action, epsilon = differentialize_action(transitions)
-    rew2act_grads = transitions.extras['reward_grads']
+    diff_action = dist_params_mean + jnp.ones_like(dist_params_mean) * epsilon
+    diff_action = parametric_action_distribution.postprocess(diff_action)
     
-    next_dist_params = policy_network.apply(normalizer_params, policy_params, transitions.next_observation)
+    rew2act_grads = transitions.extras['reward_grads']
+    empty_acc = jnp.zeros_like(transitions.action[0])
+
+    def compute_disc_action(carry, target_t):
+      discount, reward_scaling, acc = carry
+      action, rew2act_grad, trans_discount, truncation_mask, transition = target_t
+      # print(transition.observation, transition.next_observation)
+      acc = action + rew2act_grad * discount * trans_discount * truncation_mask * acc
+      return (discount, reward_scaling, acc), (acc)
+
+    (_, _, _), (disc_actions) = jax.lax.scan(
+      compute_disc_action,
+      (discounting, reward_scaling, empty_acc),
+      (diff_action, rew2act_grads, 
+      transitions.discount, 1-transitions.extras['state_extras']['truncation'],
+      transitions),
+      length = int(transitions.action.shape[0]),
+      reverse=True)
+
+    
+    disc_action_sum = jnp.sum(disc_actions[0])
+    end_next_obs = transitions.next_observation[-1].reshape(1, -1)
+    next_dist_params = policy_network.apply(normalizer_params, policy_params, end_next_obs)
     next_action = parametric_action_distribution.sample_no_postprocessing(next_dist_params, key)
     next_action = parametric_action_distribution.postprocess(next_action)
-    next_q = q_network.apply(normalizer_params, target_q_params, transitions.next_observation, next_action)
-    next_v = jnp.min(next_q, axis=-1)
-    reward_term = rew2act_grads * diff_action * reward_scaling
+    real_next_q = q_network.apply(normalizer_params, target_q_params, end_next_obs, next_action)
+    next_q = discounting ** transitions.reward.shape[0] * jnp.min(real_next_q, axis=-1)
+    next_q = jnp.mean(next_q)
+
+    actor_loss = - (next_q + disc_action_sum)
+    # reward_term = rew2act_grads * diff_action * reward_scaling
     # truncation = jnp.expand_dims(1 - transitions.extras['state_extras']['truncation'], axis=-1)
+    correction = jnp.mean(transitions.observation[1:] - transitions.next_observation[:-1])
     
-    actor_loss = (reward_term + jnp.expand_dims(transitions.discount * discounting * next_v, -1))
-    actor_loss = -jnp.mean(actor_loss)
-    return actor_loss, {'reward_term': reward_term, 
-                        'Q_bootstrap_pi': next_v,
+    
+    return actor_loss, {'reward_term': disc_action_sum, 
+                        'Q_bootstrap_pi': real_next_q,
                         'epsilon_avg': jnp.mean(epsilon),
-                        'epsilon_norm': jnp.std(epsilon)}
+                        'epsilon_norm': jnp.std(epsilon),
+                        'trans_rank_correct': correction}
 
 
   def critic_loss(q_params: Params, policy_params: Params,
