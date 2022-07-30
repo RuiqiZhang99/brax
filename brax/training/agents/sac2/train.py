@@ -16,7 +16,7 @@ from brax.training.types import Policy
 from brax.training.acme import running_statistics
 from brax.training.acme import specs
 from brax.training.agents.sac2 import losses as sac_losses
-from brax.training.agents.sac2 import networks as sac_networks
+from brax.training.agents.sac2 import networks2 as sac_networks
 from brax.training.types import Params, PRNGKey, Transition
 import tensorflow as tf
 import numpy as np

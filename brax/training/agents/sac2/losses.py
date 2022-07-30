@@ -18,9 +18,10 @@ Soft Actor-Critic losses.
 See: https://arxiv.org/pdf/1812.05905.pdf
 """
 from typing import Any
+from brax.jumpy import ones_like
 
 from brax.training import types
-from brax.training.agents.sac import networks as sac_networks
+from brax.training.agents.sac2 import networks2 as sac_networks
 from brax.training.types import Params
 from brax.training.types import PRNGKey, Transition
 import jax
@@ -48,12 +49,14 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
 
     def differentialize_action(trans: Transition):
       indiff_action = trans.extras['policy_extras']['non_tanh_action']
-      dist_params = policy_network.apply(normalizer_params, policy_params, trans.observation)
-      dist_mean, dist_std = jnp.split(dist_params, 2, axis=-1)
-      nor_tanh_std = jax.nn.softplus(dist_std) + min_std
-      epsilon = jax.lax.stop_gradient((indiff_action - dist_mean) / (nor_tanh_std))
+      # dist_params = policy_network.apply(normalizer_params, policy_params, trans.observation)
+      # dist_mean, dist_std = jnp.split(dist_params, 2, axis=-1)
 
-      diff_action = dist_mean + nor_tanh_std * epsilon
+      # Note: Here, dist_params_std = jnp.ones_like(dist_params_mean)
+      dist_params_mean = policy_network.apply(normalizer_params, policy_params, trans.observation)
+      epsilon = jax.lax.stop_gradient(indiff_action - dist_params_mean)
+
+      diff_action = dist_params_mean + jnp.ones_like(dist_params_mean) * epsilon
       diff_action = parametric_action_distribution.postprocess(diff_action)
       return diff_action, epsilon
   
