@@ -272,14 +272,24 @@ class UniformSamplingQueue(ReplayBuffer, Generic[Sample]):
     assert buffer_state.data.shape == self._data_shape
     # assert buffer_state.current_size.at[0].get() - self._num_envs * self._sample_batch_size > 0
     key, sample_key = jax.random.split(buffer_state.key)
-    '''
+    
     start_idx = jax.random.randint(
                 sample_key, (1,), 
                 minval=0,
-                maxval=buffer_state.current_size-(self._num_envs*self._sample_batch_size)).at[0].get()
-    '''
-    idx = jnp.arange(self._seed, (self._seed+self._num_envs*self._sample_batch_size), step=self._num_envs, dtype=np.uint)
-    batch = jnp.take(buffer_state.data, idx, axis=0, mode='clip')
+                maxval=buffer_state.current_size-(self._num_envs*self._sample_batch_size))
+    
+    def generate_index(carry, counter):
+        seed, num_envs = carry
+        idx = seed + num_envs * counter
+        return (start_idx, num_envs), (idx)
+    
+    (_, _), (index) = jax.lax.scan(
+        generate_index,
+        (start_idx, self._num_envs),
+        (jnp.arange(0, self._sample_batch_size, step=1, dtype=np.uint)))
+    index = jnp.squeeze(index)
+    # idx = jnp.arange(self._seed, (self._seed+self._num_envs*self._sample_batch_size), step=self._num_envs, dtype=np.uint)
+    batch = jnp.take(buffer_state.data, index, axis=0, mode='clip')
     return buffer_state.replace(key=key), self._unflatten_fn(batch)
 
   def size(self, buffer_state: _ReplayBufferState) -> int:

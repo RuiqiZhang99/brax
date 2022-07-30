@@ -55,8 +55,8 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
     dist_params_mean = policy_network.apply(normalizer_params, policy_params, transitions.observation)
     epsilon = jax.lax.stop_gradient(indiff_action - dist_params_mean)
 
-    diff_action = dist_params_mean + jnp.ones_like(dist_params_mean) * epsilon
-    diff_action = parametric_action_distribution.postprocess(diff_action)
+    diff_action_raw = dist_params_mean + jnp.ones_like(dist_params_mean) * epsilon
+    diff_action = parametric_action_distribution.postprocess(diff_action_raw)
     
     rew2act_grads = transitions.extras['reward_grads']
     empty_acc = jnp.zeros_like(transitions.action[0])
@@ -97,7 +97,9 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
                         'Q_bootstrap_pi': real_next_q,
                         'epsilon_avg': jnp.mean(epsilon),
                         'epsilon_norm': jnp.std(epsilon),
-                        'trans_rank_correct': correction}
+                        'trans_rank_correct': correction,
+                        'raw_action_mean': jnp.mean(diff_action_raw),
+                        'raw_action_std': jnp.std(diff_action_raw)}
 
 
   def critic_loss(q_params: Params, policy_params: Params,
