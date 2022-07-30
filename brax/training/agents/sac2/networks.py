@@ -34,16 +34,15 @@ class SACNetworks:
 def make_inference_fn(sac_networks: SACNetworks):
   """Creates params and inference function for the SAC agent."""
 
-  def make_policy(params: types.PolicyParams,
-                  deterministic: bool = False) -> types.Policy:
+  def make_policy(params: types.PolicyParams, deterministic: bool = False) -> types.Policy:
 
     def policy(observations: types.Observation,
                key_sample: PRNGKey) -> Tuple[types.Action, types.Extra]:
       logits = sac_networks.policy_network.apply(*params, observations)
       if deterministic:
         return sac_networks.parametric_action_distribution.mode(logits), {}
-      return sac_networks.parametric_action_distribution.sample(
-          logits, key_sample), {}
+      return sac_networks.parametric_action_distribution.sample(logits, key_sample), {
+            "non_tanh_action": sac_networks.parametric_action_distribution.sample_no_postprocessing(logits, key_sample)}
 
     return policy
 

@@ -42,8 +42,7 @@ def make_inference_fn(sac_networks: SACNetworks):
       logits = sac_networks.policy_network.apply(*params, observations)
       if deterministic:
         return sac_networks.parametric_action_distribution.mode(logits), {}
-      return sac_networks.parametric_action_distribution.sample(
-          logits, key_sample), {}
+      return sac_networks.parametric_action_distribution.sample(logits, key_sample), {}
 
     return policy
 

@@ -176,7 +176,7 @@ def train(environment: envs.Env,
       next_observation=dummy_obs,
       extras={
           'state_extras': {'truncation': 0.},
-          'policy_extras': {},
+          'policy_extras': {'non_tanh_action': jnp.zeros((action_size,))},
           'reward_grads': jnp.zeros((action_size,))})
 
   replay_buffer = replay_buffers.UniformSamplingQueue(
@@ -184,13 +184,11 @@ def train(environment: envs.Env,
       dummy_data_sample=dummy_transition,
       sample_batch_size=batch_size * grad_updates_per_step // device_count)
 
-  # alpha_loss, actor_loss, critic_loss = sac_losses.make_losses(sac_network=sac_network,
   actor_loss_fn, critic_loss_fn = sac_losses.make_losses(sac_network=sac_network,
                                                   reward_scaling=reward_scaling,
                                                   discounting=discounting,
                                                   action_size=action_size)
 
-  # alpha_update = gradients.gradient_update_fn(alpha_loss, alpha_optimizer, pmap_axis_name=_PMAP_AXIS_NAME)
   
   actor_update = gradients.gradient_update_fn(actor_loss_fn, policy_optimizer, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
   critic_update = gradients.gradient_update_fn(critic_loss_fn, q_optimizer, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
@@ -205,17 +203,7 @@ def train(environment: envs.Env,
   def sgd_step(carry: Tuple[TrainingState, PRNGKey], transitions: Transition) -> Tuple[Tuple[TrainingState, PRNGKey], Metrics]:
     training_state, key = carry
     key, key_critic, key_actor = jax.random.split(key, 3)
-    '''
-    alpha_loss, alpha_params, alpha_optimizer_state = alpha_update(
-        training_state.alpha_params,
-        training_state.policy_params,
-        training_state.normalizer_params,
-        transitions,
-        key_alpha,
-        optimizer_state=training_state.alpha_optimizer_state)
-
-    alpha = jnp.exp(training_state.alpha_params)
-    '''
+    
     (critic_loss, critic_info), q_params, q_optimizer_state = critic_update(
         training_state.q_params,
         training_state.policy_params,
@@ -285,7 +273,7 @@ def train(environment: envs.Env,
     # ============================== Store the Gradient into Buffer ================================= #
     rew2act_grads_fn = jax.grad(actor_step, argnums=1, has_aux=True)
     # rew2act_grads, nstates, transitions = jax.vmap(rew2act_grads_fn)()
-
+    '''
     def compute_grad_per_env(carry, target_env):
       single_env_state, action, policy_extra = target_env
       single_env_state = jax.tree_map(lambda x: jnp.expand_dims(x, axis=0), single_env_state)
@@ -295,6 +283,15 @@ def train(environment: envs.Env,
       return carry, (rew2act_grad, single_nstate, transition)
     
     _, (rew2act_grads, nstates, transitions), = jax.lax.scan(compute_grad_per_env, (), (env_state, actions, policy_extras), length=num_envs)
+    '''
+    def compute_grad_per_env(single_env_state, action, policy_extra):
+      single_env_state = jax.tree_map(lambda x: jnp.expand_dims(x, axis=0), single_env_state)
+      policy_extra = jax.tree_map(lambda x: jnp.expand_dims(x, axis=0), policy_extra)
+      action = jnp.expand_dims(action, axis=0)
+      rew2act_grad, (single_nstate, transition) = rew2act_grads_fn(single_env_state, action, policy_extra, extra_fields=('truncation',))
+      return rew2act_grad, single_nstate, transition
+    
+    rew2act_grads, nstates, transitions = jax.vmap(compute_grad_per_env, in_axes=(0, 0, 0))(env_state, actions, policy_extras)
 
     rew2act_grads = jnp.squeeze(rew2act_grads)
     nstates = jax.tree_map(lambda x: jnp.squeeze(x), nstates)
@@ -304,6 +301,7 @@ def train(environment: envs.Env,
     
     transitions.extras['reward_grads'] = rew2act_grads
     # ============================== Store the Gradient into Buffer ================================= #
+
     normalizer_params = running_statistics.update(
         normalizer_params,
         transitions.observation,
