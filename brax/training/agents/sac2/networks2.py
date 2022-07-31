@@ -36,10 +36,9 @@ def make_inference_fn(sac_networks: SACNetworks):
 def make_sac_networks(
     observation_size: int,
     action_size: int,
-    preprocess_observations_fn: types.PreprocessObservationFn = types
-    .identity_observation_preprocessor,
+    preprocess_observations_fn: types.PreprocessObservationFn = types.identity_observation_preprocessor,
     hidden_layer_sizes: Sequence[int] = (256, 256),
-    activation: networks.ActivationFn = linen.relu) -> SACNetworks:
+    activation: networks.ActivationFn = linen.elu) -> SACNetworks:
   """Make SAC networks."""
   parametric_action_distribution = utils.NormalTanhDistribution(event_size=action_size)
   policy_network = networks.make_policy_network(

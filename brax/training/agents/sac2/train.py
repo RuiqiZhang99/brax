@@ -118,7 +118,7 @@ def train(environment: envs.Env,
     file_writer = tf.summary.create_file_writer(logdir)
     file_writer.set_as_default()
   
-  assert seed < num_envs * (episode_length - horizon)
+  # assert seed < num_envs * (episode_length - horizon)
 
   process_id = jax.process_index()
   local_devices_to_use = jax.local_device_count()
@@ -188,7 +188,7 @@ def train(environment: envs.Env,
       max_replay_size=max_replay_size // device_count,
       dummy_data_sample=dummy_transition,
       sample_batch_size=horizon * grad_updates_per_step, 
-      num_envs=num_envs, seed=seed)
+      num_envs=num_envs)
 
   actor_loss_fn, critic_loss_fn = sac_losses.make_losses(sac_network=sac_network,
                                                   reward_scaling=reward_scaling,
