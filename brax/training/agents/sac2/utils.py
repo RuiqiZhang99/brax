@@ -286,7 +286,7 @@ class UniformSamplingQueue(ReplayBuffer, Generic[Sample]):
     (_, _), (index) = jax.lax.scan(
         generate_index,
         (start_idx, self._num_envs),
-        (jnp.arange(0, self._sample_batch_size, step=1, dtype=np.uint)))
+        (jnp.arange(1, self._sample_batch_size+1, step=1, dtype=np.uint)))
     index = jnp.squeeze(index)
     # idx = jnp.arange(self._seed, (self._seed+self._num_envs*self._sample_batch_size), step=self._num_envs, dtype=np.uint)
     batch = jnp.take(buffer_state.data, index, axis=0, mode='clip')
