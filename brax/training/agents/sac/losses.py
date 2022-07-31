@@ -83,14 +83,16 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
                  key: PRNGKey) -> jnp.ndarray:
     dist_params = policy_network.apply(normalizer_params, policy_params,
                                        transitions.observation)
-    action = parametric_action_distribution.sample_no_postprocessing(
+    action_raw = parametric_action_distribution.sample_no_postprocessing(
         dist_params, key)
-    log_prob = parametric_action_distribution.log_prob(dist_params, action)
-    action = parametric_action_distribution.postprocess(action)
+    log_prob = parametric_action_distribution.log_prob(dist_params, action_raw)
+    action = parametric_action_distribution.postprocess(action_raw)
     q_action = q_network.apply(normalizer_params, q_params,
                                transitions.observation, action)
     min_q = jnp.min(q_action, axis=-1)
     actor_loss = alpha * log_prob - min_q
-    return jnp.mean(actor_loss)
+    return jnp.mean(actor_loss), {'Q_bootstrap': jnp.mean(min_q),
+                                  'raw_action_mean': jnp.mean(action_raw),
+                                  'raw_action_std': jnp.std(action_raw)}
 
   return alpha_loss, critic_loss, actor_loss

@@ -40,7 +40,8 @@ import flax
 import jax
 import jax.numpy as jnp
 import optax
-
+import tensorflow as tf
+import numpy as np
 Metrics = types.Metrics
 Transition = types.Transition
 InferenceParams = Tuple[running_statistics.NestedMeanStd, Params]
@@ -105,7 +106,7 @@ def _init_training_state(
 
 def train(environment: envs.Env,
           num_timesteps,
-          episode_length: int,
+          episode_length: int = 1000,
           action_repeat: int = 1,
           num_envs: int = 1,
           num_eval_envs: int = 128,
@@ -114,18 +115,25 @@ def train(environment: envs.Env,
           seed: int = 0,
           batch_size: int = 256,
           num_evals: int = 1,
-          normalize_observations: bool = False,
+          normalize_observations: bool = True,
           max_devices_per_host: Optional[int] = None,
           reward_scaling: float = 1.,
           tau: float = 0.005,
           min_replay_size: int = 0,
-          max_replay_size: Optional[int] = None,
+          max_replay_size: Optional[int] = 10_0000,
           grad_updates_per_step: int = 1,
           deterministic_eval: bool = False,
+          tensorboard_flag = True,
+          logdir = './logs',
           network_factory: types.NetworkFactory[
               sac_networks.SACNetworks] = sac_networks.make_sac_networks,
           progress_fn: Callable[[int, Metrics], None] = lambda *args: None,
           checkpoint_logdir: Optional[str] = None):
+
+  if tensorboard_flag:
+    file_writer = tf.summary.create_file_writer(logdir)
+    file_writer.set_as_default()
+
   """SAC training."""
   process_id = jax.process_index()
   local_devices_to_use = jax.local_device_count()
@@ -209,7 +217,7 @@ def train(environment: envs.Env,
   critic_update = gradients.gradient_update_fn(
       critic_loss, q_optimizer, pmap_axis_name=_PMAP_AXIS_NAME)
   actor_update = gradients.gradient_update_fn(
-      actor_loss, policy_optimizer, pmap_axis_name=_PMAP_AXIS_NAME)
+      actor_loss, policy_optimizer, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
 
   def sgd_step(
       carry: Tuple[TrainingState, PRNGKey],
@@ -235,7 +243,7 @@ def train(environment: envs.Env,
         transitions,
         key_critic,
         optimizer_state=training_state.q_optimizer_state)
-    actor_loss, policy_params, policy_optimizer_state = actor_update(
+    (actor_loss, actor_info), policy_params, policy_optimizer_state = actor_update(
         training_state.policy_params,
         training_state.normalizer_params,
         training_state.q_params,
@@ -252,6 +260,9 @@ def train(environment: envs.Env,
         'actor_loss': actor_loss,
         'alpha_loss': alpha_loss,
         'alpha': jnp.exp(alpha_params),
+        'raw_action_mean': actor_info['raw_action_mean'],
+        'raw_action_std': actor_info['raw_action_std'],
+        'Q_bootstrap': actor_info['Q_bootstrap'],
     }
 
     new_training_state = TrainingState(
@@ -444,6 +455,11 @@ def train(environment: envs.Env,
      training_metrics) = training_epoch_with_timing(training_state, env_state,
                                                     buffer_state, epoch_keys)
     current_step = int(_unpmap(training_state.env_steps))
+
+    with tf.name_scope('Actor Info'):
+        tf.summary.scalar('raw_action_mean', data=np.array(training_metrics['training/raw_action_mean']), step=current_step)
+        tf.summary.scalar('raw_action_std', data=np.array(training_metrics['training/raw_action_std']), step=current_step)
+        tf.summary.scalar('Q_bootstrap', data=np.array(training_metrics['training/Q_bootstrap']), step=current_step)
 
     # Eval and logging
     if process_id == 0:
