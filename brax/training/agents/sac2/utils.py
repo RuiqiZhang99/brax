@@ -194,7 +194,7 @@ class UniformSamplingQueue(ReplayBuffer, Generic[Sample]):
   """
 
   def __init__(self, max_replay_size: int, dummy_data_sample: Sample,
-               sample_batch_size: int, num_envs: int, seed: int):
+               sample_batch_size: int, num_envs: int):
     self._flatten_fn = jax.vmap(lambda x: flatten_util.ravel_pytree(x)[0])
 
     dummy_flatten, self._unflatten_fn = flatten_util.ravel_pytree(dummy_data_sample)
@@ -205,7 +205,6 @@ class UniformSamplingQueue(ReplayBuffer, Generic[Sample]):
     self._data_dtype = dummy_flatten.dtype
     self._sample_batch_size = sample_batch_size
     self._num_envs = num_envs
-    self._seed = seed
 
   def init(self, key: PRNGKey) -> _ReplayBufferState:
     return _ReplayBufferState(
