@@ -52,7 +52,7 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
 
   def critic_loss(q_params: Params, policy_params: Params,
                   normalizer_params: Any, target_q_params: Params,
-                  alpha: jnp.ndarray, transitions: Transition,
+                  transitions: Transition,
                   key: PRNGKey) -> jnp.ndarray:
     q_old_action = q_network.apply(normalizer_params, q_params, transitions.observation, transitions.action)
     next_dist_params = policy_network.apply(normalizer_params, policy_params, transitions.next_observation)
@@ -60,7 +60,7 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
     next_log_prob = parametric_action_distribution.log_prob(next_dist_params, next_action)
     next_action = parametric_action_distribution.postprocess(next_action)
     next_q = q_network.apply(normalizer_params, target_q_params, transitions.next_observation, next_action)
-    next_v = jnp.min(next_q, axis=-1) - alpha * next_log_prob
+    next_v = jnp.min(next_q, axis=-1) - 0.01 * next_log_prob
     target_q = jax.lax.stop_gradient(transitions.reward * reward_scaling +
                                      transitions.discount * discounting *
                                      next_v)
@@ -74,7 +74,7 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
     return q_loss
 
   def actor_loss(policy_params: Params, normalizer_params: Any,
-                 q_params: Params, alpha: jnp.ndarray, transitions: Transition,
+                 q_params: Params, transitions: Transition,
                  key: PRNGKey) -> jnp.ndarray:
     dist_params = policy_network.apply(normalizer_params, policy_params,
                                        transitions.observation)

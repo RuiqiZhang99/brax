@@ -237,15 +237,13 @@ def train(environment: envs.Env,
         training_state.policy_params,
         training_state.normalizer_params,
         training_state.target_q_params,
-        alpha,
         transitions,
         key_critic,
         optimizer_state=training_state.q_optimizer_state)
     (actor_loss, actor_info), policy_params, policy_optimizer_state = actor_update(
         training_state.policy_params,
         training_state.normalizer_params,
-        training_state.q_params,
-        alpha,
+        training_state.target_q_params,
         transitions,
         key_actor,
         optimizer_state=training_state.policy_optimizer_state)
