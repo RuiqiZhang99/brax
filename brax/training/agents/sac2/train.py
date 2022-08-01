@@ -261,6 +261,10 @@ def train(environment: envs.Env,
         'raw_action_mean': actor_info['raw_action_mean'],
         'raw_action_std': actor_info['raw_action_std'],
         'Q_bootstrap': actor_info['Q_bootstrap'],
+        'reward_grad_mean': actor_info['reward_grad_mean'],
+        'reward_grad_std': actor_info['reward_grad_std'],
+        'epsilon_mean': actor_info['epsilon_mean'],
+        'epsilon_std': actor_info['epsilon_std'],
     }
 
     new_training_state = TrainingState(
@@ -328,7 +332,13 @@ def train(environment: envs.Env,
     rew2act_grads = jnp.squeeze(rew2act_grads, axis=1)
     nstates = jax.tree_map(lambda x: jnp.squeeze(x, axis=1), nstates)
     transitions = jax.tree_map(lambda x: jnp.squeeze(x, axis=1), transitions)
-    transitions.extras['reward_action_grad'] = rew2act_grads
+    def clip_by_global_norm(updates, max_gradient_norm=10):
+        g_norm = optax.global_norm(updates)
+        trigger = g_norm < max_gradient_norm
+        updates = jax.tree_multimap(lambda t: jnp.where(trigger, t, (t / g_norm) * max_gradient_norm), updates)
+        return updates
+
+    transitions.extras['reward_action_grad'] = clip_by_global_norm(rew2act_grads)
 
     normalizer_params = running_statistics.update(
         normalizer_params,
@@ -495,6 +505,10 @@ def train(environment: envs.Env,
         tf.summary.scalar('raw_action_mean', data=np.array(training_metrics['training/raw_action_mean']), step=current_step)
         tf.summary.scalar('raw_action_std', data=np.array(training_metrics['training/raw_action_std']), step=current_step)
         tf.summary.scalar('Q_bootstrap', data=np.array(training_metrics['training/Q_bootstrap']), step=current_step)
+        tf.summary.scalar('epsilon_mean', data=np.array(training_metrics['training/epsilon_mean']), step=current_step)
+        tf.summary.scalar('epsilon_std', data=np.array(training_metrics['training/epsilon_std']), step=current_step)
+        tf.summary.scalar('reward_grad_mean', data=np.array(training_metrics['training/reward_grad_mean']), step=current_step)
+        tf.summary.scalar('reward_grad_std', data=np.array(training_metrics['training/reward_grad_std']), step=current_step)
 
     # Eval and logging
     if process_id == 0:
