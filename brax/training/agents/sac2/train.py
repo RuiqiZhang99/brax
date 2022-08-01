@@ -112,7 +112,7 @@ def train(environment: envs.Env,
           learning_rate: float = 1e-4,
           discounting: float = 0.9,
           seed: int = 0,
-          batch_size: int = 256,
+          batch_size: int = 128,
           num_evals: int = 1,
           normalize_observations: bool = True,
           max_devices_per_host: Optional[int] = None,
@@ -196,10 +196,9 @@ def train(environment: envs.Env,
       discount=0.,
       next_observation=dummy_obs,
       extras={
-          'state_extras': {
-              'truncation': 0.
-          },
-          'policy_extras': {}
+          'state_extras': {'truncation': 0.},
+          'policy_extras': {'no_tanh_action': jnp.zeros((action_size,))},
+          'reward_action_grad': jnp.ones((action_size,)),
       })
   replay_buffer = replay_buffers.UniformSamplingQueue(
       max_replay_size=max_replay_size // device_count,
@@ -277,20 +276,21 @@ def train(environment: envs.Env,
         normalizer_params=training_state.normalizer_params)
     return (new_training_state, key), metrics
 
-  def actor_step(env: envs.Env, env_state: envs.State, policy: Policy,
-    key: PRNGKey, extra_fields: Sequence[str] = ()) -> Tuple[envs.State, Transition]:
-    actions, policy_extras = policy(env_state.obs, key)
-    nstate = env.step(env_state, actions)
+  # rewrited actor_step API
+  def actor_step(env_state: envs.State, action, 
+                 policy_extras=None, extra_fields: Sequence[str] = ()) -> Tuple[envs.State, Transition]:
+    nstate = env.step(env_state, action)
     state_extras = {x: nstate.info[x] for x in extra_fields}
-    return nstate, Transition(
+    reward = jnp.mean(nstate.reward)
+    return reward, (nstate, Transition(
         observation=env_state.obs,
-        action=actions,
+        action=action,
         reward=nstate.reward,
-        discount=1 - nstate.done,
+        discount=1-nstate.done,
         next_observation=nstate.obs,
-        extras={
-            'policy_extras': policy_extras,
-            'state_extras': state_extras})
+        extras={'policy_extras': policy_extras, 'state_extras': state_extras}))
+
+  rew2act_grads_fn = jax.grad(actor_step, argnums=1, has_aux=True)
 
   def get_experience(
       normalizer_params: running_statistics.RunningStatisticsState,
@@ -299,8 +299,22 @@ def train(environment: envs.Env,
   ) -> Tuple[running_statistics.RunningStatisticsState, envs.State,
              ReplayBufferState]:
     policy = make_policy((normalizer_params, policy_params))
-    env_state, transitions = acting.actor_step(
-        env, env_state, policy, key, extra_fields=('truncation',))
+    actions, policy_extras = policy(env_state.obs, key)
+    # env_state, transitions = acting.actor_step(env, env_state, policy, key, extra_fields=('truncation',))
+
+    def compute_grad_per_env(single_env_state, action, policy_extra):
+      single_env_state = jax.tree_map(lambda x: jnp.expand_dims(x, axis=0), single_env_state)
+      policy_extra = jax.tree_map(lambda x: jnp.expand_dims(x, axis=0), policy_extra)
+      action = jnp.expand_dims(action, axis=0)
+      rew2act_grad, (single_nstate, transition) = rew2act_grads_fn(single_env_state, action, policy_extra, extra_fields=('truncation',))
+      return rew2act_grad, single_nstate, transition
+    
+    rew2act_grads, nstates, transitions = jax.vmap(compute_grad_per_env, in_axes=(0, 0, 0))(env_state, actions, policy_extras)
+
+    rew2act_grads = jnp.squeeze(rew2act_grads)
+    nstates = jax.tree_map(lambda x: jnp.squeeze(x), nstates)
+    transitions = jax.tree_map(lambda x: jnp.squeeze(x), transitions)
+    transitions.extras['reward_action_grad'] = rew2act_grads
 
     normalizer_params = running_statistics.update(
         normalizer_params,
