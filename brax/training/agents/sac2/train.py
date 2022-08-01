@@ -32,8 +32,8 @@ from brax.training import replay_buffers
 from brax.training import types
 from brax.training.acme import running_statistics
 from brax.training.acme import specs
-from brax.training.agents.sac import losses as sac_losses
-from brax.training.agents.sac import networks as sac_networks
+from brax.training.agents.sac2 import losses as sac_losses
+from brax.training.agents.sac2 import networks as sac_networks
 from brax.training.types import Params
 from brax.training.types import PRNGKey, Transition
 import flax

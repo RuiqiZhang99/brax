@@ -19,7 +19,7 @@ See: https://arxiv.org/pdf/1812.05905.pdf
 from typing import Any
 
 from brax.training import types
-from brax.training.agents.sac import networks as sac_networks
+from brax.training.agents.sac2 import networks as sac_networks
 from brax.training.types import Params
 from brax.training.types import PRNGKey
 import jax
