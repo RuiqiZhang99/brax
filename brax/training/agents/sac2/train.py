@@ -255,7 +255,7 @@ def train(environment: envs.Env,
         'critic_loss': critic_loss,
         'actor_loss': actor_loss,
         'alpha_loss': alpha_loss,
-        'alpha': jnp.exp(alpha_params),
+        # 'alpha': jnp.exp(alpha_params),
         'raw_action_mean': actor_info['raw_action_mean'],
         'raw_action_std': actor_info['raw_action_std'],
         'sampled_action_mean': actor_info['sampled_action_mean'],
@@ -513,8 +513,8 @@ def train(environment: envs.Env,
         tf.summary.scalar('reward_grad_mean', data=np.array(training_metrics['training/reward_grad_mean']), step=current_step)
         tf.summary.scalar('reward_grad_std', data=np.array(training_metrics['training/reward_grad_std']), step=current_step)
         tf.summary.scalar('sampled_action_mean', data=np.array(training_metrics['training/sampled_action_mean']), step=current_step)
-        tf.summary.scalar('sampled_action_mean', data=np.array(training_metrics['training/sampled_action_std']), step=current_step)
-        tf.summary.scalar('alpha', data=np.array(training_metrics['training/alpha']), step=current_step)
+        tf.summary.scalar('sampled_action_std', data=np.array(training_metrics['training/sampled_action_std']), step=current_step)
+        # tf.summary.scalar('alpha', data=np.array(training_metrics['training/alpha']), step=current_step)
         tf.summary.scalar('log_prob', data=np.array(training_metrics['training/log_prob']), step=current_step)
         tf.summary.scalar('partial_reward_mul_action', data=np.array(training_metrics['training/partial_reward_mul_action']), step=current_step)
 
