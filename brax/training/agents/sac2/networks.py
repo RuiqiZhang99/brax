@@ -43,7 +43,8 @@ def make_inference_fn(sac_networks: SACNetworks):
       if deterministic:
         return sac_networks.parametric_action_distribution.mode(logits), {}
       action = sac_networks.parametric_action_distribution.sample(logits, key_sample)
-      return action, {'no_tanh_action': jnp.arctanh(action)}
+      origin_action = sac_networks.parametric_action_distribution.inverse_postprocess(action)
+      return action, {'no_tanh_action': origin_action}
 
     return policy
 
