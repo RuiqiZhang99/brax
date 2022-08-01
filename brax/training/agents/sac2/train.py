@@ -198,7 +198,7 @@ def train(environment: envs.Env,
       extras={
           'state_extras': {'truncation': 0.},
           'policy_extras': {'no_tanh_action': jnp.zeros((action_size,))},
-          'reward_action_grad': jnp.ones((action_size,)),
+          # 'reward_action_grad': jnp.ones((action_size,)),
       })
   replay_buffer = replay_buffers.UniformSamplingQueue(
       max_replay_size=max_replay_size // device_count,
@@ -314,7 +314,7 @@ def train(environment: envs.Env,
     rew2act_grads = jnp.squeeze(rew2act_grads)
     nstates = jax.tree_map(lambda x: jnp.squeeze(x), nstates)
     transitions = jax.tree_map(lambda x: jnp.squeeze(x), transitions)
-    transitions.extras['reward_action_grad'] = rew2act_grads
+    # transitions.extras['reward_action_grad'] = rew2act_grads
 
     normalizer_params = running_statistics.update(
         normalizer_params,
