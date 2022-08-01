@@ -86,7 +86,7 @@ class NormalDistribution:
   """Normal distribution."""
 
   def __init__(self, loc, scale):
-    self.loc = jnp.clip(loc, -2.64, 2.64)
+    self.loc = loc
     self.scale = scale
 
   def sample(self, seed):

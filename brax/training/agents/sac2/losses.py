@@ -53,7 +53,7 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
 
     # Note: Here, dist_params_std = jnp.ones_like(dist_params_mean)
     dist_params_mean = policy_network.apply(normalizer_params, policy_params, transitions.observation)
-    dist_params_mean = jnp.clip(dist_params_mean, -2.64, 2.64)
+    # dist_params_mean = jnp.clip(dist_params_mean, -2.64, 2.64)
     # epsilon = jax.lax.stop_gradient(indiff_action - dist_params_mean)
     epsilon = indiff_action - dist_params_mean
 
