@@ -140,8 +140,7 @@ def train(environment: envs.Env,
   if max_devices_per_host is not None:
     local_devices_to_use = min(local_devices_to_use, max_devices_per_host)
   device_count = local_devices_to_use * jax.process_count()
-  logging.info('local_device_count: %s; total_device_count: %s',
-               local_devices_to_use, device_count)
+  logging.info('local_device_count: %s; total_device_count: %s', local_devices_to_use, device_count)
 
   if min_replay_size >= num_timesteps:
     raise ValueError(
@@ -197,10 +196,9 @@ def train(environment: envs.Env,
       discount=0.,
       next_observation=dummy_obs,
       extras={
-          'state_extras': {
-              'truncation': 0.
-          },
-          'policy_extras': {}
+          'state_extras': {'truncation': 0.},
+          'policy_extras': {'origin_action': jnp.zeros((action_size,))},
+          'reward_action_grad': jnp.zeros((action_size,)),
       })
   replay_buffer = replay_buffers.UniformSamplingQueue(
       max_replay_size=max_replay_size // device_count,
@@ -290,7 +288,7 @@ def train(environment: envs.Env,
         discount=1-nstate.done,
         next_observation=nstate.obs,
         extras={'policy_extras': policy_extras, 'state_extras': state_extras}))
-        
+
   rew2act_grads_fn = jax.grad(actor_step, argnums=1, has_aux=True)
 
   def get_experience(
@@ -317,9 +315,10 @@ def train(environment: envs.Env,
         (), (env_state, actions, policy_extras),
         length=num_envs)
     
-    rew2act_grads = jnp.squeeze(rew2act_grads)
-    nstates = jax.tree_map(lambda x: jnp.squeeze(x), nstates)
-    transitions = jax.tree_map(lambda x: jnp.squeeze(x), transitions)
+    rew2act_grads = jnp.squeeze(rew2act_grads, axis=1)
+    nstates = jax.tree_map(lambda x: jnp.squeeze(x, axis=1), nstates)
+    transitions = jax.tree_map(lambda x: jnp.squeeze(x, axis=1), transitions)
+    transitions.extras['reward_action_grad'] = rew2act_grads
 
     normalizer_params = running_statistics.update(
         normalizer_params,
@@ -337,19 +336,13 @@ def train(environment: envs.Env,
     normalizer_params, env_state, buffer_state = get_experience(
         training_state.normalizer_params, training_state.policy_params,
         env_state, buffer_state, experience_key)
-    training_state = training_state.replace(
-        normalizer_params=normalizer_params,
-        env_steps=training_state.env_steps + env_steps_per_actor_step)
+    training_state = training_state.replace(normalizer_params=normalizer_params, env_steps=training_state.env_steps + env_steps_per_actor_step)
 
     buffer_state, transitions = replay_buffer.sample(buffer_state)
     # Change the front dimension of transitions so 'update_step' is called
     # grad_updates_per_step times by the scan.
-    transitions = jax.tree_map(
-        lambda x: jnp.reshape(x, (grad_updates_per_step, -1) + x.shape[1:]),
-        transitions)
-    (training_state, _), metrics = jax.lax.scan(sgd_step,
-                                                (training_state, training_key),
-                                                transitions)
+    transitions = jax.tree_map(lambda x: jnp.reshape(x, (grad_updates_per_step, -1) + x.shape[1:]), transitions)
+    (training_state, _), metrics = jax.lax.scan(sgd_step, (training_state, training_key), transitions)
 
     metrics['buffer_current_size'] = buffer_state.current_size
     metrics['buffer_current_position'] = buffer_state.current_position
@@ -444,8 +437,7 @@ def train(environment: envs.Env,
   env_state = jax.pmap(env.reset)(env_keys)
 
   # Replay buffer init
-  buffer_state = jax.pmap(replay_buffer.init)(
-      jax.random.split(rb_key, local_devices_to_use))
+  buffer_state = jax.pmap(replay_buffer.init)(jax.random.split(rb_key, local_devices_to_use))
 
   evaluator = acting.Evaluator(
       env,
@@ -471,8 +463,7 @@ def train(environment: envs.Env,
   training_state, env_state, buffer_state, _ = prefill_replay_buffer(
       training_state, env_state, buffer_state, prefill_keys)
 
-  replay_size = jnp.sum(jax.vmap(
-      replay_buffer.size)(buffer_state)) * jax.process_count()
+  replay_size = jnp.sum(jax.vmap(replay_buffer.size)(buffer_state)) * jax.process_count()
   logging.info('replay size after prefill %s', replay_size)
   assert replay_size >= min_replay_size
   training_walltime = time.time() - t
