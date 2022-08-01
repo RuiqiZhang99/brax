@@ -15,7 +15,7 @@
 """SAC networks."""
 
 from typing import Sequence, Tuple
-
+import jax.numpy as jnp
 from brax.training import distribution
 from brax.training import networks
 from brax.training import types
@@ -43,8 +43,7 @@ def make_inference_fn(sac_networks: SACNetworks):
       if deterministic:
         return sac_networks.parametric_action_distribution.mode(logits), {}
       no_tanh_action = sac_networks.parametric_action_distribution.sample_no_postprocessing(logits, key_sample)
-      return sac_networks.parametric_action_distribution.postprocess(no_tanh_action), {
-        'no_tanh_action': no_tanh_action}
+      return jnp.tanh(no_tanh_action), {'no_tanh_action': no_tanh_action}
 
     return policy
 
