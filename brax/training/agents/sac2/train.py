@@ -290,6 +290,7 @@ def train(environment: envs.Env,
         discount=1-nstate.done,
         next_observation=nstate.obs,
         extras={'policy_extras': policy_extras, 'state_extras': state_extras}))
+        
   rew2act_grads_fn = jax.grad(actor_step, argnums=1, has_aux=True)
 
   def get_experience(
@@ -302,15 +303,20 @@ def train(environment: envs.Env,
     # env_state, transitions = acting.actor_step(env, env_state, policy, key, extra_fields=('truncation',))
     actions, policy_extras = policy(env_state.obs, key)
           
-    def compute_grad_per_env(single_env_state, action, policy_extra):
+    def compute_grad_per_env(carry, target_env):
+      single_env_state, action, policy_extra = target_env
       single_env_state = jax.tree_map(lambda x: jnp.expand_dims(x, axis=0), single_env_state)
       policy_extra = jax.tree_map(lambda x: jnp.expand_dims(x, axis=0), policy_extra)
       action = jnp.expand_dims(action, axis=0)
       rew2act_grad, (single_nstate, transition) = rew2act_grads_fn(single_env_state, action, policy_extra, extra_fields=('truncation',))
-      return rew2act_grad, single_nstate, transition
+      return carry, (rew2act_grad, single_nstate, transition)
 
-    rew2act_grads, nstates, transitions = jax.vmap(compute_grad_per_env, in_axes=(0, 0, 0))(env_state, actions, policy_extras)
-
+    # rew2act_grads, nstates, transitions = jax.vmap(compute_grad_per_env, in_axes=(0, 0, 0))(env_state, actions, policy_extras)
+    (_), (rew2act_grads, nstates, transitions) = jax.lax.scan(
+        compute_grad_per_env,
+        (), (env_state, actions, policy_extras),
+        length=num_envs)
+    
     rew2act_grads = jnp.squeeze(rew2act_grads)
     nstates = jax.tree_map(lambda x: jnp.squeeze(x), nstates)
     transitions = jax.tree_map(lambda x: jnp.squeeze(x), transitions)
