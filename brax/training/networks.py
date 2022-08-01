@@ -52,6 +52,8 @@ class MLP(linen.Module):
           kernel_init=self.kernel_init,
           use_bias=self.bias)(
               hidden)
+      if i <= len(self.layer_sizes) - 2:
+        hidden = linen.normalize(hidden)
       if i != len(self.layer_sizes) - 1 or self.activate_final:
         hidden = self.activation(hidden)
     return hidden
