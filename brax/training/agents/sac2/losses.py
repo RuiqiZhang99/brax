@@ -104,7 +104,7 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
                         'reward_grad_std': jnp.std(reward_action_grad),
                         'partial_reward_mul_action': jnp.mean(partial_reward_mul_action),
                         'log_prob': jnp.mean(log_prob),
-                        'alpha': alpha,
+                        # 'alpha': alpha,
                         'epsilon_mean': jnp.mean(epsilon),
                         'epsilon_std': jnp.std(epsilon),}
 
