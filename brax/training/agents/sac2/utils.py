@@ -156,7 +156,7 @@ class UniformSamplingQueue(ReplayBuffer, Generic[Sample]):
   def size(self, buffer_state: _ReplayBufferState) -> int:
     return buffer_state.current_size
     
-'''
+
 class ParametricDistribution(abc.ABC):
   """Abstract class for parametric (action) distribution."""
 
@@ -295,4 +295,3 @@ class NormalTanhDistribution(ParametricDistribution):
     scale = jnp.ones_like(loc)
     # scale = jax.nn.softplus(scale) + self._min_std
     return NormalDistribution(loc=loc, scale=scale)
-'''

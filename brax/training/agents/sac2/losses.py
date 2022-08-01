@@ -23,18 +23,16 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
                  target_q_params: Params, normalizer_params: Any, 
                  transitions: Transition, key: PRNGKey, min_std=0.001) -> jnp.ndarray:
 
+    indiff_action = transitions.extras['policy_extras']['non_tanh_action']
     # dist_params = policy_network.apply(normalizer_params, policy_params, transitions.observation)
     # dist_mean, dist_std = jnp.split(dist_params, 2, axis=-1)
-    # real_action = transitions.action
+    # nor_tanh_std = jax.nn.softplus(dist_std) + min_std
+    dist_mean = policy_network.apply(normalizer_params, policy_params, transitions.observation)
+    dist_std = jnp.ones_like(dist_mean)
+    epsilon = jax.lax.stop_gradient(indiff_action - dist_mean)
 
-
-    indiff_action = transitions.extras['policy_extras']['non_tanh_action']
-    dist_params = policy_network.apply(normalizer_params, policy_params, transitions.observation)
-    dist_mean, dist_std = jnp.split(dist_params, 2, axis=-1)
-    nor_tanh_std = jax.nn.softplus(dist_std) + min_std
-    epsilon = (indiff_action - dist_mean) / (nor_tanh_std)
-
-    diff_action_raw = dist_mean + nor_tanh_std * epsilon
+    # diff_action_raw = dist_mean + nor_tanh_std * epsilon
+    diff_action_raw = dist_mean + dist_std * epsilon
     diff_action = parametric_action_distribution.postprocess(diff_action_raw)
   
     rew2act_grads = transitions.extras['reward_grads']
