@@ -83,16 +83,23 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
                  key: PRNGKey) -> jnp.ndarray:
     dist_params = policy_network.apply(normalizer_params, policy_params,
                                        transitions.observation)
-    action_raw = parametric_action_distribution.sample_no_postprocessing(
-        dist_params, key)
-    log_prob = parametric_action_distribution.log_prob(dist_params, action_raw)
-    action = parametric_action_distribution.postprocess(action_raw)
-    q_action = q_network.apply(normalizer_params, q_params,
-                               transitions.observation, action)
+    dist_mean, dist_std = jnp.split(dist_params, 2, axis=-1)
+    # action_raw = parametric_action_distribution.sample_no_postprocessing(dist_params, key)
+    indiff_origin_action = transitions.extras['policy_extras']['origin_action']
+    epsilon = jax.lax.stop_gradient((indiff_origin_action - dist_mean) / (dist_std + 0.001))
+    diff_action_raw = dist_mean + epsilon * dist_std
+    diff_action = parametric_action_distribution.postprocess(diff_action_raw)
+
+    log_prob = parametric_action_distribution.log_prob(dist_params, diff_action_raw)
+    q_action = q_network.apply(normalizer_params, q_params,transitions.observation, diff_action)
     min_q = jnp.min(q_action, axis=-1)
-    actor_loss = alpha * log_prob - min_q
-    return jnp.mean(actor_loss), {'Q_bootstrap': jnp.mean(min_q),
-                                  'raw_action_mean': jnp.mean(action_raw),
-                                  'raw_action_std': jnp.std(action_raw)}
+    
+    reward_action_grad = transitions.extras['reward_action_grad']
+    partial_reward_mul_action = jnp.sum(reward_action_grad*diff_action, axis=-1)
+
+    actor_loss = -jnp.mean(partial_reward_mul_action + min_q - alpha * log_prob)
+    return actor_loss, {'Q_bootstrap': jnp.mean(min_q),
+                        'raw_action_mean': jnp.mean(diff_action_raw),
+                        'raw_action_std': jnp.std(diff_action_raw)}
 
   return alpha_loss, critic_loss, actor_loss
