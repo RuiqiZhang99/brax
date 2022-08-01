@@ -32,9 +32,10 @@ from brax.training import replay_buffers
 from brax.training import types
 from brax.training.acme import running_statistics
 from brax.training.acme import specs
-from brax.training.agents.sac2 import losses as sac_losses
-from brax.training.agents.sac2 import networks as sac_networks
-from brax.training.types import Params, PRNGKey, Policy
+from brax.training.agents.sac import losses as sac_losses
+from brax.training.agents.sac import networks as sac_networks
+from brax.training.types import Params
+from brax.training.types import PRNGKey, Transition
 import flax
 import jax
 import jax.numpy as jnp
@@ -109,17 +110,17 @@ def train(environment: envs.Env,
           action_repeat: int = 1,
           num_envs: int = 64,
           num_eval_envs: int = 16,
-          learning_rate: float = 1e-4,
+          learning_rate: float = 6e-4,
           discounting: float = 0.9,
           seed: int = 0,
-          batch_size: int = 128,
+          batch_size: int = 256,
           num_evals: int = 1,
           normalize_observations: bool = True,
           max_devices_per_host: Optional[int] = None,
           reward_scaling: float = 1.,
           tau: float = 0.005,
           min_replay_size: int = 0,
-          max_replay_size: Optional[int] = 10_0000,
+          max_replay_size: Optional[int] = None,
           grad_updates_per_step: int = 1,
           deterministic_eval: bool = False,
           tensorboard_flag = True,
@@ -196,9 +197,10 @@ def train(environment: envs.Env,
       discount=0.,
       next_observation=dummy_obs,
       extras={
-          'state_extras': {'truncation': 0.},
-          'policy_extras': {'no_tanh_action': jnp.zeros((action_size,))},
-          # 'reward_action_grad': jnp.ones((action_size,)),
+          'state_extras': {
+              'truncation': 0.
+          },
+          'policy_extras': {}
       })
   replay_buffer = replay_buffers.UniformSamplingQueue(
       max_replay_size=max_replay_size // device_count,
@@ -276,7 +278,6 @@ def train(environment: envs.Env,
         normalizer_params=training_state.normalizer_params)
     return (new_training_state, key), metrics
 
-  # rewrited actor_step API
   def actor_step(env_state: envs.State, action, 
                  policy_extras=None, extra_fields: Sequence[str] = ()) -> Tuple[envs.State, Transition]:
     nstate = env.step(env_state, action)
@@ -289,7 +290,6 @@ def train(environment: envs.Env,
         discount=1-nstate.done,
         next_observation=nstate.obs,
         extras={'policy_extras': policy_extras, 'state_extras': state_extras}))
-
   rew2act_grads_fn = jax.grad(actor_step, argnums=1, has_aux=True)
 
   def get_experience(
@@ -299,22 +299,21 @@ def train(environment: envs.Env,
   ) -> Tuple[running_statistics.RunningStatisticsState, envs.State,
              ReplayBufferState]:
     policy = make_policy((normalizer_params, policy_params))
-    actions, policy_extras = policy(env_state.obs, key)
     # env_state, transitions = acting.actor_step(env, env_state, policy, key, extra_fields=('truncation',))
-
+    actions, policy_extras = policy(env_state.obs, key)
+          
     def compute_grad_per_env(single_env_state, action, policy_extra):
       single_env_state = jax.tree_map(lambda x: jnp.expand_dims(x, axis=0), single_env_state)
       policy_extra = jax.tree_map(lambda x: jnp.expand_dims(x, axis=0), policy_extra)
       action = jnp.expand_dims(action, axis=0)
       rew2act_grad, (single_nstate, transition) = rew2act_grads_fn(single_env_state, action, policy_extra, extra_fields=('truncation',))
       return rew2act_grad, single_nstate, transition
-    
+
     rew2act_grads, nstates, transitions = jax.vmap(compute_grad_per_env, in_axes=(0, 0, 0))(env_state, actions, policy_extras)
 
     rew2act_grads = jnp.squeeze(rew2act_grads)
     nstates = jax.tree_map(lambda x: jnp.squeeze(x), nstates)
     transitions = jax.tree_map(lambda x: jnp.squeeze(x), transitions)
-    # transitions.extras['reward_action_grad'] = rew2act_grads
 
     normalizer_params = running_statistics.update(
         normalizer_params,
@@ -486,11 +485,10 @@ def train(environment: envs.Env,
 
     with tf.name_scope('Actor Info'):
         tf.summary.scalar('actor_loss', data=np.array(training_metrics['training/actor_loss']), step=current_step)
+        tf.summary.scalar('critic_loss', data=np.array(training_metrics['training/critic_loss']), step=current_step)
         tf.summary.scalar('raw_action_mean', data=np.array(training_metrics['training/raw_action_mean']), step=current_step)
         tf.summary.scalar('raw_action_std', data=np.array(training_metrics['training/raw_action_std']), step=current_step)
         tf.summary.scalar('Q_bootstrap', data=np.array(training_metrics['training/Q_bootstrap']), step=current_step)
-    with tf.name_scope('Critic Info'):
-        tf.summary.scalar('critic_loss', data=np.array(training_metrics['training/critic_loss']), step=current_step)
 
     # Eval and logging
     if process_id == 0:

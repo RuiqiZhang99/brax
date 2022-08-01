@@ -19,7 +19,7 @@ See: https://arxiv.org/pdf/1812.05905.pdf
 from typing import Any
 
 from brax.training import types
-from brax.training.agents.sac2 import networks as sac_networks
+from brax.training.agents.sac import networks as sac_networks
 from brax.training.types import Params
 from brax.training.types import PRNGKey
 import jax
@@ -81,11 +81,14 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
   def actor_loss(policy_params: Params, normalizer_params: Any,
                  q_params: Params, alpha: jnp.ndarray, transitions: Transition,
                  key: PRNGKey) -> jnp.ndarray:
-    dist_params = policy_network.apply(normalizer_params, policy_params, transitions.observation)
-    action_raw = parametric_action_distribution.sample_no_postprocessing(dist_params, key)
+    dist_params = policy_network.apply(normalizer_params, policy_params,
+                                       transitions.observation)
+    action_raw = parametric_action_distribution.sample_no_postprocessing(
+        dist_params, key)
     log_prob = parametric_action_distribution.log_prob(dist_params, action_raw)
     action = parametric_action_distribution.postprocess(action_raw)
-    q_action = q_network.apply(normalizer_params, q_params, transitions.observation, action)
+    q_action = q_network.apply(normalizer_params, q_params,
+                               transitions.observation, action)
     min_q = jnp.min(q_action, axis=-1)
     actor_loss = alpha * log_prob - min_q
     return jnp.mean(actor_loss), {'Q_bootstrap': jnp.mean(min_q),

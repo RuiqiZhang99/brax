@@ -13,15 +13,15 @@
 # limitations under the License.
 
 """SAC tests."""
-'''
+
 import pickle
 
 from absl.testing import absltest
 from absl.testing import parameterized
 from brax import envs
 from brax.training.acme import running_statistics
-from brax.training.agents.sac2 import networks as sac_networks
-from brax.training.agents.sac2 import train as sac
+from brax.training.agents.sac import networks as sac_networks
+from brax.training.agents.sac import train as sac
 import jax
 
 
@@ -74,4 +74,3 @@ class SACTest(parameterized.TestCase):
 
 if __name__ == '__main__':
   absltest.main()
-'''
