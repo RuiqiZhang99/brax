@@ -254,19 +254,21 @@ def train(environment: envs.Env,
     return (new_training_state, key), metrics
 
   # rewrited actor_step API
-  def actor_step(env_state: envs.State, actions, 
+  def actor_step(env_state: envs.State, action, 
                  policy_extras=None, extra_fields: Sequence[str] = ()) -> Tuple[envs.State, Transition]:
-    nstate = env.step(env_state, actions)
+    nstate = env.step(env_state, action)
     state_extras = {x: nstate.info[x] for x in extra_fields}
-    reward = nstate.reward.at[0].get()
+    reward = jnp.mean(nstate.reward)
     return reward, (nstate, Transition(
         observation=env_state.obs,
-        action=actions,
+        action=action,
         reward=nstate.reward,
         discount=1-nstate.done,
         next_observation=nstate.obs,
         extras={'policy_extras': policy_extras, 'state_extras': state_extras}))
 
+  rew2act_grads_fn = jax.grad(actor_step, argnums=1, has_aux=True)
+  
   def get_experience(
       normalizer_params: running_statistics.RunningStatisticsState,
       policy_params: Params, env_state: envs.State,
@@ -274,20 +276,6 @@ def train(environment: envs.Env,
     policy = make_policy((normalizer_params, policy_params))
     actions, policy_extras = policy(env_state.obs, key)
           
-    # ============================== Store the Gradient into Buffer ================================= #
-    rew2act_grads_fn = jax.grad(actor_step, argnums=1, has_aux=True)
-    # rew2act_grads, nstates, transitions = jax.vmap(rew2act_grads_fn)()
-    '''
-    def compute_grad_per_env(carry, target_env):
-      single_env_state, action, policy_extra = target_env
-      single_env_state = jax.tree_map(lambda x: jnp.expand_dims(x, axis=0), single_env_state)
-      policy_extra = jax.tree_map(lambda x: jnp.expand_dims(x, axis=0), policy_extra)
-      action = jnp.expand_dims(action, axis=0)
-      rew2act_grad, (single_nstate, transition) = rew2act_grads_fn(single_env_state, action, policy_extra, extra_fields=('truncation',))
-      return carry, (rew2act_grad, single_nstate, transition)
-    
-    _, (rew2act_grads, nstates, transitions), = jax.lax.scan(compute_grad_per_env, (), (env_state, actions, policy_extras), length=num_envs)
-    '''
     def compute_grad_per_env(single_env_state, action, policy_extra):
       single_env_state = jax.tree_map(lambda x: jnp.expand_dims(x, axis=0), single_env_state)
       policy_extra = jax.tree_map(lambda x: jnp.expand_dims(x, axis=0), policy_extra)
@@ -313,13 +301,13 @@ def train(environment: envs.Env,
     buffer_state = replay_buffer.insert(buffer_state, transitions)
     return normalizer_params, env_state, buffer_state
 
+
   def training_step(training_state: TrainingState, env_state: envs.State, buffer_state: ReplayBufferState, key: PRNGKey
                     ) -> Tuple[TrainingState, envs.State, ReplayBufferState, Metrics]:
     experience_key, training_key = jax.random.split(key)
     normalizer_params, env_state, buffer_state = get_experience(training_state.normalizer_params, training_state.policy_params,
                                                                 env_state, buffer_state, experience_key)
     training_state = training_state.replace(normalizer_params=normalizer_params, env_steps=training_state.env_steps + env_steps_per_actor_step)
-
     buffer_state, transitions = replay_buffer.sample(buffer_state)
 
     # Change the front dimension of transitions so 'update_step' is called
