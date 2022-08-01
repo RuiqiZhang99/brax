@@ -65,7 +65,7 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
     next_action = parametric_action_distribution.postprocess(next_action)
     next_q = q_network.apply(normalizer_params, target_q_params,
                              transitions.next_observation, next_action)
-    next_v = jnp.min(next_q, axis=-1) - alpha * next_log_prob
+    next_v = jnp.min(next_q, axis=-1) - 0.01 * next_log_prob
     target_q = jax.lax.stop_gradient(transitions.reward * reward_scaling +
                                      transitions.discount * discounting *
                                      next_v)
@@ -97,7 +97,7 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
     reward_action_grad = transitions.extras['reward_action_grad']
     partial_reward_mul_action = jnp.sum(reward_action_grad*diff_action, axis=-1)
 
-    actor_loss = -jnp.mean(partial_reward_mul_action + min_q - alpha * log_prob)
+    actor_loss = -jnp.mean(partial_reward_mul_action + min_q - 0.01 * log_prob)
     return actor_loss, {'Q_bootstrap': jnp.mean(min_q),
                         'raw_action_mean': jnp.mean(diff_action_raw),
                         'raw_action_std': jnp.std(diff_action_raw)}
