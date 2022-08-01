@@ -10,14 +10,13 @@ from brax.jumpy import array, norm
 from brax.training import acting
 from brax.training import gradients
 from brax.training import pmap
-# from brax.training import replay_buffers
+from brax.training import replay_buffers
 from brax.training import types
 from brax.training.types import Policy
 from brax.training.acme import running_statistics
 from brax.training.acme import specs
 from brax.training.agents.sac2 import losses as sac_losses
-from brax.training.agents.sac2 import networks2 as sac_networks
-from brax.training.agents.sac2 import utils
+from brax.training.agents.sac2 import networks as sac_networks
 from brax.training.types import Params, PRNGKey, Transition
 import tensorflow as tf
 import numpy as np
@@ -91,13 +90,12 @@ def train(environment: envs.Env,
           num_timesteps: int = 250_0000,
           episode_length: int = 1000,
           action_repeat: int = 1,
-          num_envs: int = 16,
+          num_envs: int = 32,
           num_eval_envs: int = 8,
           learning_rate: float = 1e-4,
           discounting: float = 0.9,
-          horizon = 32,  
-          seed: int = random.randint(0, 1000),
-          # batch_size: int = 128,
+          seed: int = random.randint(0, 9999),
+          batch_size: int = 256,
           num_evals: int = 1,
           normalize_observations: bool = True,
           max_devices_per_host: Optional[int] = None,
@@ -118,8 +116,6 @@ def train(environment: envs.Env,
     file_writer = tf.summary.create_file_writer(logdir)
     file_writer.set_as_default()
   
-  # assert seed < num_envs * (episode_length - horizon)
-
   process_id = jax.process_index()
   local_devices_to_use = jax.local_device_count()
   if max_devices_per_host is not None:
@@ -184,11 +180,10 @@ def train(environment: envs.Env,
           'policy_extras': {'non_tanh_action': jnp.zeros((action_size,))},
           'reward_grads': jnp.zeros((action_size,))})
 
-  replay_buffer = utils.UniformSamplingQueue(
+  replay_buffer = replay_buffers.UniformSamplingQueue(
       max_replay_size=max_replay_size // device_count,
       dummy_data_sample=dummy_transition,
-      sample_batch_size=horizon * grad_updates_per_step, 
-      num_envs=num_envs)
+      sample_batch_size=batch_size * grad_updates_per_step // device_count)
 
   actor_loss_fn, critic_loss_fn = sac_losses.make_losses(sac_network=sac_network,
                                                   reward_scaling=reward_scaling,
@@ -233,8 +228,9 @@ def train(environment: envs.Env,
                 'critic_loss': critic_loss,
                 'epsilon_avg': actor_info['epsilon_avg'],
                 'epsilon_norm': actor_info['epsilon_norm'],
-                'raw_action_mean': actor_info['raw_action_mean'],
-                'raw_action_std': actor_info['raw_action_std'],
+                'raw_action_avg': actor_info['raw_action_avg'],
+                'raw_action_norm': actor_info['raw_action_norm'],
+                'action_transfer_error': actor_info['action_transfer_error'],
                 'rew_action_grad_avg': jnp.mean(transitions.extras['reward_grads']),
                 'rew_action_grad_norm': jnp.std(transitions.extras['reward_grads']),
                 'reward_term': actor_info['reward_term'],
@@ -242,8 +238,7 @@ def train(environment: envs.Env,
                 'Q_old_action': critic_info['Q_old_action'],
                 'Q_bootstrap_q': critic_info['Q_bootstrap_q'],
                 'policy_params_norm': optax.global_norm(policy_params),
-                'q_params_norm': optax.global_norm(q_params),
-                'trans_rank_correct': actor_info['trans_rank_correct'],}
+                'q_params_norm': optax.global_norm(q_params),}
         
     new_training_state = TrainingState(
         policy_optimizer_state=policy_optimizer_state,
@@ -451,22 +446,19 @@ def train(environment: envs.Env,
         tf.summary.scalar('actor_loss', data=np.array(training_metrics['training/actor_loss']), step=current_step)
         tf.summary.scalar('epsilon_avg', data=np.array(training_metrics['training/epsilon_avg']), step=current_step)
         tf.summary.scalar('epsilon_norm', data=np.array(training_metrics['training/epsilon_norm']), step=current_step)
-        tf.summary.scalar('raw_action_mean', data=np.array(training_metrics['training/raw_action_mean']), step=current_step)
-        tf.summary.scalar('raw_action_std', data=np.array(training_metrics['training/raw_action_std']), step=current_step)
+        tf.summary.scalar('raw_action_avg', data=np.array(training_metrics['training/raw_action_avg']), step=current_step)
+        tf.summary.scalar('raw_action_norm', data=np.array(training_metrics['training/raw_action_norm']), step=current_step)
+        tf.summary.scalar('action_transfer_error', data=np.array(training_metrics['training/action_transfer_error']), step=current_step)
         tf.summary.scalar('rew_action_grad_avg', data=np.array(training_metrics['training/rew_action_grad_avg']), step=current_step)
         tf.summary.scalar('rew_action_grad_norm', data=np.array(training_metrics['training/rew_action_grad_norm']), step=current_step)
         tf.summary.scalar('reward_term', data=np.array(training_metrics['training/reward_term']), step=current_step)
         tf.summary.scalar('Q_bootstrap_pi', data=np.array(training_metrics['training/Q_bootstrap_pi']), step=current_step)
         tf.summary.scalar('policy_params_norm', data=np.array(training_metrics['training/policy_params_norm']), step=current_step)
-        tf.summary.scalar('trans_rank_correct', data=np.array(training_metrics['training/trans_rank_correct']), step=current_step)
     with tf.name_scope('Critic Info'):
         tf.summary.scalar('critic_loss', data=np.array(training_metrics['training/critic_loss']), step=current_step)
         tf.summary.scalar('Q_old_action', data=np.array(training_metrics['training/Q_old_action']), step=current_step) 
         tf.summary.scalar('Q_bootstrap_q', data=np.array(training_metrics['training/Q_bootstrap_q']), step=current_step)
         tf.summary.scalar('q_params_norm', data=np.array(training_metrics['training/q_params_norm']), step=current_step)
-    # with tf.name_scope('Experimental Results'):
-        # tf.summary.scalar('buffer_current_size', data=np.array(metrics['training/buffer_current_size']), step=current_step)
-        # tf.summary.scalar('buffer_current_position', data=np.array(metrics['training/buffer_current_position']), step=current_step)
         
     # tf.summary.scalar('walltime', data=np.array(training_walltime), step=current_step)
 
