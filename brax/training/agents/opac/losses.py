@@ -1,7 +1,7 @@
 from typing import Any
 
 from brax.training import types
-from brax.training.agents.sac import networks as sac_networks
+from brax.training.agents.opac import networks as sac_networks
 from brax.training.types import Params
 from brax.training.types import PRNGKey, Transition
 import jax
@@ -45,10 +45,10 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
     reward_term = rew2act_grads * diff_action * reward_scaling
     # truncation = jnp.expand_dims(1 - transitions.extras['state_extras']['truncation'], axis=-1)
     
-    actor_loss = (reward_term + jnp.expand_dims(transitions.discount * discounting * next_v, -1))
+    actor_loss = (jnp.sum(reward_term, axis=-1) + transitions.discount * discounting * next_v)
     actor_loss = -jnp.mean(actor_loss)
-    return actor_loss, {'reward_term': reward_term, 
-                        'Q_bootstrap_pi': next_v,
+    return actor_loss, {'reward_term': jnp.mean(jnp.sum(reward_term, axis=-1)), 
+                        'Q_bootstrap_pi': jnp.mean(next_v),
                         'epsilon_avg': jnp.mean(epsilon),
                         'epsilon_norm': jnp.std(epsilon),
                         'raw_action_avg': jnp.mean(diff_action_raw),

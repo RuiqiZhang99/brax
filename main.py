@@ -15,7 +15,7 @@ from brax.io import model
 from brax.training.agents.ppo import train as ppo
 from brax.training.agents.sac import train as sac
 from brax.training.agents.apg2 import train as apg2
-from brax.training.agents.sac2 import train as offpolicy
+from brax.training.agents.opac import train as offpolicy
 
 env_name = "walker2d"  # @param ['ant', 'fetch', 'grasp', 'halfcheetah', 'hopper', 'humanoid', 'humanoidstandup', 'pusher', 'reacher', 'walker2d', 'grasp', 'ur5e']
 env = envs.get_environment(env_name=env_name)
