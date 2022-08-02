@@ -32,23 +32,9 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
                 discounting: float, action_size: int):
   """Creates the SAC losses."""
 
-  target_entropy = -0.5 * action_size
   policy_network = sac_network.policy_network
   q_network = sac_network.q_network
   parametric_action_distribution = sac_network.parametric_action_distribution
-
-  def alpha_loss(log_alpha: jnp.ndarray, policy_params: Params,
-                 normalizer_params: Any, transitions: Transition,
-                 key: PRNGKey) -> jnp.ndarray:
-
-    dist_params = policy_network.apply(normalizer_params, policy_params,
-                                       transitions.observation)
-    action = parametric_action_distribution.sample_no_postprocessing(
-        dist_params, key)
-    log_prob = parametric_action_distribution.log_prob(dist_params, action)
-    alpha = jnp.exp(log_alpha)
-    alpha_loss = alpha * jax.lax.stop_gradient(-log_prob - target_entropy)
-    return jnp.mean(alpha_loss)
 
   def critic_loss(q_params: Params, policy_params: Params,
                   normalizer_params: Any, target_q_params: Params,
@@ -74,8 +60,7 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
   def actor_loss(policy_params: Params, normalizer_params: Any,
                  q_params: Params, transitions: Transition,
                  key: PRNGKey) -> jnp.ndarray:
-    dist_mean = policy_network.apply(normalizer_params, policy_params,
-                                       transitions.observation)
+    dist_mean = policy_network.apply(normalizer_params, policy_params, transitions.observation)
     dist_std = 0.5 * jnp.ones_like(dist_mean)
     # dist_mean, dist_std = jnp.split(dist_params, 2, axis=-1)
     # action_raw = parametric_action_distribution.sample_no_postprocessing(dist_params, key)
@@ -102,10 +87,10 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
                         'sampled_action_std': jnp.std(diff_action),
                         'reward_grad_mean': jnp.mean(reward_action_grad),
                         'reward_grad_std': jnp.std(reward_action_grad),
+                        'max_reward_grad': jnp.max(reward_action_grad),
+                        'min_reward_grad': jnp.min(reward_action_grad),
                         'partial_reward_mul_action': jnp.mean(partial_reward_mul_action),
-                        # 'log_prob': jnp.mean(log_prob),
-                        # 'alpha': alpha,
                         'epsilon_mean': jnp.mean(epsilon),
                         'epsilon_std': jnp.std(epsilon),}
 
-  return alpha_loss, critic_loss, actor_loss
+  return critic_loss, actor_loss
