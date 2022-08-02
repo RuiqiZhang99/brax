@@ -212,7 +212,7 @@ def make_policy_network(
     hidden_layer_sizes: Sequence[int] = (256, 256),
     activation: ActivationFn = linen.relu) -> FeedForwardNetwork:
   """Creates a policy network."""
-  policy_module = SNMLP(
+  policy_module = MLP(
       layer_sizes=list(hidden_layer_sizes) + [param_size],
       activation=activation,
       kernel_init=jax.nn.initializers.lecun_uniform())
@@ -233,7 +233,7 @@ def make_value_network(
     hidden_layer_sizes: Sequence[int] = (256, 256),
     activation: ActivationFn = linen.relu) -> FeedForwardNetwork:
   """Creates a policy network."""
-  value_module = SNMLP(
+  value_module = MLP(
       layer_sizes=list(hidden_layer_sizes) + [1],
       activation=activation,
       kernel_init=jax.nn.initializers.lecun_uniform())
