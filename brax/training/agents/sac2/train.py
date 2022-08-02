@@ -261,7 +261,7 @@ def train(environment: envs.Env,
         'sampled_action_mean': actor_info['sampled_action_mean'],
         'sampled_action_std': actor_info['sampled_action_std'],
         'partial_reward_mul_action': actor_info['partial_reward_mul_action'],
-        'log_prob': actor_info['log_prob'],
+        # 'log_prob': actor_info['log_prob'],
         'Q_bootstrap': actor_info['Q_bootstrap'],
         'reward_grad_mean': actor_info['reward_grad_mean'],
         'reward_grad_std': actor_info['reward_grad_std'],
@@ -514,7 +514,7 @@ def train(environment: envs.Env,
         tf.summary.scalar('sampled_action_mean', data=np.array(training_metrics['training/sampled_action_mean']), step=current_step)
         tf.summary.scalar('sampled_action_std', data=np.array(training_metrics['training/sampled_action_std']), step=current_step)
         # tf.summary.scalar('alpha', data=np.array(training_metrics['training/alpha']), step=current_step)
-        tf.summary.scalar('log_prob', data=np.array(training_metrics['training/log_prob']), step=current_step)
+        # tf.summary.scalar('log_prob', data=np.array(training_metrics['training/log_prob']), step=current_step)
         tf.summary.scalar('partial_reward_mul_action', data=np.array(training_metrics['training/partial_reward_mul_action']), step=current_step)
 
     # Eval and logging

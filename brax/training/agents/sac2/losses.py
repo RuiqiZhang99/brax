@@ -57,10 +57,10 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
     q_old_action = q_network.apply(normalizer_params, q_params, transitions.observation, transitions.action)
     next_dist_params = policy_network.apply(normalizer_params, policy_params, transitions.next_observation)
     next_action = parametric_action_distribution.sample_no_postprocessing(next_dist_params, key)
-    next_log_prob = parametric_action_distribution.log_prob(next_dist_params, next_action)
+    # next_log_prob = parametric_action_distribution.log_prob(next_dist_params, next_action)
     next_action = parametric_action_distribution.postprocess(next_action)
     next_q = q_network.apply(normalizer_params, target_q_params, transitions.next_observation, next_action)
-    next_v = jnp.min(next_q, axis=-1) - 0.01 * next_log_prob
+    next_v = jnp.min(next_q, axis=-1) # - 0.01 * next_log_prob
     target_q = jax.lax.stop_gradient(transitions.reward * reward_scaling +
                                      transitions.discount * discounting *
                                      next_v)
@@ -85,7 +85,7 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
     diff_action_raw = dist_mean + epsilon * dist_std
     diff_action = parametric_action_distribution.postprocess(diff_action_raw)
 
-    log_prob = parametric_action_distribution.log_prob(dist_params, diff_action_raw)
+    # log_prob = parametric_action_distribution.log_prob(dist_params, diff_action_raw)
     q_action = q_network.apply(normalizer_params, q_params,transitions.observation, diff_action)
     min_q = jnp.min(q_action, axis=-1)
     
@@ -103,7 +103,7 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
                         'reward_grad_mean': jnp.mean(reward_action_grad),
                         'reward_grad_std': jnp.std(reward_action_grad),
                         'partial_reward_mul_action': jnp.mean(partial_reward_mul_action),
-                        'log_prob': jnp.mean(log_prob),
+                        # 'log_prob': jnp.mean(log_prob),
                         # 'alpha': alpha,
                         'epsilon_mean': jnp.mean(epsilon),
                         'epsilon_std': jnp.std(epsilon),}
