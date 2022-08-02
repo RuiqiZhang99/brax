@@ -40,7 +40,7 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
   def alpha_loss(log_alpha: jnp.ndarray, policy_params: Params,
                  normalizer_params: Any, transitions: Transition,
                  key: PRNGKey) -> jnp.ndarray:
-    """Eq 18 from https://arxiv.org/pdf/1812.05905.pdf."""
+
     dist_params = policy_network.apply(normalizer_params, policy_params,
                                        transitions.observation)
     action = parametric_action_distribution.sample_no_postprocessing(
@@ -61,9 +61,7 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
     next_action = parametric_action_distribution.postprocess(next_action)
     next_q = q_network.apply(normalizer_params, target_q_params, transitions.next_observation, next_action)
     next_v = jnp.min(next_q, axis=-1) # - 0.01 * next_log_prob
-    target_q = jax.lax.stop_gradient(transitions.reward * reward_scaling +
-                                     transitions.discount * discounting *
-                                     next_v)
+    target_q = jax.lax.stop_gradient(transitions.reward * reward_scaling + transitions.discount * discounting *next_v)
     q_error = q_old_action - jnp.expand_dims(target_q, -1)
 
     # Better bootstrapping for truncated episodes.
@@ -76,13 +74,15 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
   def actor_loss(policy_params: Params, normalizer_params: Any,
                  q_params: Params, transitions: Transition,
                  key: PRNGKey) -> jnp.ndarray:
-    dist_params = policy_network.apply(normalizer_params, policy_params,
+    dist_mean = policy_network.apply(normalizer_params, policy_params,
                                        transitions.observation)
-    dist_mean, dist_std = jnp.split(dist_params, 2, axis=-1)
+    dist_std = 0.5 * jnp.ones_like(dist_mean)
+    # dist_mean, dist_std = jnp.split(dist_params, 2, axis=-1)
     # action_raw = parametric_action_distribution.sample_no_postprocessing(dist_params, key)
     indiff_origin_action = transitions.extras['policy_extras']['origin_action']
-    epsilon = jax.lax.stop_gradient((indiff_origin_action - dist_mean) / (dist_std + 0.001))
-    diff_action_raw = dist_mean + epsilon * dist_std
+
+    epsilon = jax.lax.stop_gradient((indiff_origin_action - dist_mean) / dist_std)
+    diff_action_raw = dist_mean + jax.lax.stop_gradient(epsilon * dist_std)
     diff_action = parametric_action_distribution.postprocess(diff_action_raw)
 
     # log_prob = parametric_action_distribution.log_prob(dist_params, diff_action_raw)

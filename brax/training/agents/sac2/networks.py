@@ -16,7 +16,7 @@
 
 from typing import Sequence, Tuple
 
-from brax.training import distribution
+from brax.training.agents.sac2 import utils
 from brax.training import networks
 from brax.training import types
 from brax.training.types import PRNGKey
@@ -28,7 +28,7 @@ from flax import linen
 class SACNetworks:
   policy_network: networks.FeedForwardNetwork
   q_network: networks.FeedForwardNetwork
-  parametric_action_distribution: distribution.ParametricDistribution
+  parametric_action_distribution: utils.ParametricDistribution
 
 
 def make_inference_fn(sac_networks: SACNetworks):
@@ -57,7 +57,7 @@ def make_sac_networks(
     hidden_layer_sizes: Sequence[int] = (256, 256),
     activation: networks.ActivationFn = linen.relu) -> SACNetworks:
   """Make SAC networks."""
-  parametric_action_distribution = distribution.NormalTanhDistribution(event_size=action_size)
+  parametric_action_distribution = utils.NormalTanhDistribution(event_size=action_size)
   policy_network = networks.make_policy_network(
       parametric_action_distribution.param_size,
       observation_size,
