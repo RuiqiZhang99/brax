@@ -59,9 +59,9 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
 
   def actor_loss(policy_params: Params, normalizer_params: Any,
                  q_params: Params, transitions: Transition,
-                 key: PRNGKey) -> jnp.ndarray:
+                 key: PRNGKey, alpha) -> jnp.ndarray:
     dist_mean = policy_network.apply(normalizer_params, policy_params, transitions.observation)
-    dist_std = 0.5 * jnp.ones_like(dist_mean)
+    dist_std = alpha * jnp.ones_like(dist_mean)
     # dist_mean, dist_std = jnp.split(dist_params, 2, axis=-1)
     # action_raw = parametric_action_distribution.sample_no_postprocessing(dist_params, key)
     indiff_origin_action = transitions.extras['policy_extras']['origin_action']

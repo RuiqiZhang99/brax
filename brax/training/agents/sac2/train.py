@@ -99,11 +99,12 @@ def train(environment: envs.Env,
           num_timesteps,
           episode_length: int = 1000,
           action_repeat: int = 1,
-          num_envs: int = 64,
-          num_sampling_per_update: int = 100,
+          num_envs: int = 16,
+          num_sampling_per_update: int = 50,
           num_eval_envs: int = 16,
           learning_rate: float = 1e-4,
           discounting: float = 0.9,
+          alpha: float = 0.5,
           seed: int = 0,
           batch_size: int = 256,
           num_evals: int = 1,
@@ -112,7 +113,7 @@ def train(environment: envs.Env,
           reward_scaling: float = 1.,
           tau: float = 0.005,
           min_replay_size: int = 256,
-          max_replay_size: Optional[int] = 1024,
+          max_replay_size: Optional[int] = 2048,
           grad_updates_per_step: int = 1,
           deterministic_eval: bool = True,
           tensorboard_flag = True,
@@ -153,7 +154,7 @@ def train(environment: envs.Env,
   #      (num_evals_after_init * env_steps_per_actor_step))
   num_training_steps_per_epoch = -(
       -(num_timesteps - num_prefill_env_steps) //
-      (num_evals_after_init * env_steps_per_actor_step))
+      (num_evals_after_init * env_steps_per_actor_step * num_sampling_per_update))
 
   assert num_envs % device_count == 0
   env = environment
@@ -170,7 +171,8 @@ def train(environment: envs.Env,
   sac_network = network_factory(
       observation_size=obs_size,
       action_size=action_size,
-      preprocess_observations_fn=normalize_fn)
+      preprocess_observations_fn=normalize_fn,
+      alpha = alpha)
   make_policy = sac_networks.make_inference_fn(sac_network)
 
   policy_optimizer = optax.adam(learning_rate=learning_rate)
@@ -225,6 +227,7 @@ def train(environment: envs.Env,
         training_state.target_q_params,
         transitions,
         key_actor,
+        alpha,
         optimizer_state=training_state.policy_optimizer_state)
 
     new_target_q_params = jax.tree_map(lambda x, y: x * (1 - tau) + y * tau,
@@ -468,9 +471,7 @@ def train(environment: envs.Env,
     # Optimization
     epoch_key, local_key = jax.random.split(local_key)
     epoch_keys = jax.random.split(epoch_key, local_devices_to_use)
-    (training_state, env_state, buffer_state,
-     training_metrics) = training_epoch_with_timing(training_state, env_state,
-                                                    buffer_state, epoch_keys)
+    (training_state, env_state, buffer_state, training_metrics) = training_epoch_with_timing(training_state, env_state, buffer_state, epoch_keys)
     current_step = int(_unpmap(training_state.env_steps))
 
     with tf.name_scope('Metric Info'):
@@ -494,16 +495,12 @@ def train(environment: envs.Env,
     if process_id == 0:
       if checkpoint_logdir:
         # Save current policy.
-        params = _unpmap(
-            (training_state.normalizer_params, training_state.policy_params))
+        params = _unpmap((training_state.normalizer_params, training_state.policy_params))
         path = f'{checkpoint_logdir}_sac_{current_step}.pkl'
         model.save_params(path, params)
 
       # Run evals.
-      metrics = evaluator.run_evaluation(
-          _unpmap(
-              (training_state.normalizer_params, training_state.policy_params)),
-          training_metrics)
+      metrics = evaluator.run_evaluation(_unpmap((training_state.normalizer_params, training_state.policy_params)), training_metrics)
       logging.info(metrics)
       progress_fn(current_step, metrics)
 

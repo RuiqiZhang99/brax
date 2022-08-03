@@ -123,7 +123,7 @@ class TanhBijector:
 class NormalTanhDistribution(ParametricDistribution):
   """Normal distribution followed by tanh."""
 
-  def __init__(self, event_size, min_std=0.001):
+  def __init__(self, event_size, min_std=0.001, alpha=0.5):
     """Initialize the distribution.
 
     Args:
@@ -136,14 +136,12 @@ class NormalTanhDistribution(ParametricDistribution):
         event_ndims=1,
         reparametrizable=True)
     self._min_std = min_std
+    self._alpha = alpha
 
   def create_dist(self, parameters):
     loc = parameters
-    scale = 0.5 * jnp.ones_like(loc)
+    scale = self._alpha * jnp.ones_like(loc)
     return NormalDistribution(loc=loc, scale=scale)
-
-
-
 
 #================================ Origin Network ====================================#
 ActivationFn = Callable[[jnp.ndarray], jnp.ndarray]

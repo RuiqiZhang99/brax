@@ -55,9 +55,9 @@ def make_sac_networks(
     preprocess_observations_fn: types.PreprocessObservationFn = types
     .identity_observation_preprocessor,
     hidden_layer_sizes: Sequence[int] = (256, 256),
-    activation: utils.ActivationFn = linen.elu) -> SACNetworks:
+    activation: utils.ActivationFn = linen.elu, alpha = 0.2) -> SACNetworks:
   """Make SAC networks."""
-  parametric_action_distribution = utils.NormalTanhDistribution(event_size=action_size)
+  parametric_action_distribution = utils.NormalTanhDistribution(event_size=action_size, alpha=alpha)
   policy_network = utils.make_policy_network(
       parametric_action_distribution.param_size,
       observation_size,
