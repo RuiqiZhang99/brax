@@ -99,8 +99,8 @@ def train(environment: envs.Env,
           num_timesteps,
           episode_length: int = 1000,
           action_repeat: int = 1,
-          num_envs: int = 16,
-          num_sampling_per_update: int = 50,
+          num_envs: int = 128,
+          # num_sampling_per_update: int = 50,
           num_eval_envs: int = 16,
           learning_rate: float = 1e-4,
           discounting: float = 0.9,
@@ -152,9 +152,8 @@ def train(environment: envs.Env,
   # equals to
   # ceil(num_timesteps - num_prefill_env_steps /
   #      (num_evals_after_init * env_steps_per_actor_step))
-  num_training_steps_per_epoch = -(
-      -(num_timesteps - num_prefill_env_steps) //
-      (num_evals_after_init * env_steps_per_actor_step * num_sampling_per_update))
+  num_training_steps_per_epoch = -(-(num_timesteps - num_prefill_env_steps) // 
+        (num_evals_after_init * env_steps_per_actor_step))
 
   assert num_envs % device_count == 0
   env = environment
@@ -300,6 +299,7 @@ def train(environment: envs.Env,
     rew2act_grads = jnp.squeeze(rew2act_grads, axis=1)
     nstates = jax.tree_map(lambda x: jnp.squeeze(x, axis=1), nstates)
     transitions = jax.tree_map(lambda x: jnp.squeeze(x, axis=1), transitions)
+
     def clip_by_global_norm(updates, max_gradient_norm=10):
         g_norm = optax.global_norm(updates)
         trigger = g_norm < max_gradient_norm
@@ -321,7 +321,7 @@ def train(environment: envs.Env,
       buffer_state: ReplayBufferState, key: PRNGKey
   ) -> Tuple[TrainingState, envs.State, ReplayBufferState, Metrics]:
     experience_key, training_key = jax.random.split(key)
-
+    '''
     def multi_sampling_per_train(carry, unused_t):
         normalizer_params, policy_params, env_state, buffer_state, experience_key, training_state = carry
         normalizer_params, env_state, buffer_state = get_experience(
@@ -334,12 +334,12 @@ def train(environment: envs.Env,
         (training_state.normalizer_params, training_state.policy_params, env_state, buffer_state, experience_key, training_state),
         (jnp.arange(num_sampling_per_update)))
     '''
-    for i in range(100):
-        normalizer_params, env_state, buffer_state = get_experience(
-            training_state.normalizer_params, training_state.policy_params,
-            env_state, buffer_state, experience_key)
-        training_state = training_state.replace(normalizer_params=normalizer_params, env_steps=training_state.env_steps + env_steps_per_actor_step)
-    '''
+    
+    normalizer_params, env_state, buffer_state = get_experience(
+        training_state.normalizer_params, training_state.policy_params,
+        env_state, buffer_state, experience_key)
+    training_state = training_state.replace(normalizer_params=normalizer_params, env_steps=training_state.env_steps + env_steps_per_actor_step)
+   
     buffer_state, transitions = replay_buffer.sample(buffer_state)
     # Change the front dimension of transitions so 'update_step' is called
     # grad_updates_per_step times by the scan.
