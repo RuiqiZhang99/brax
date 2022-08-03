@@ -100,6 +100,7 @@ def train(environment: envs.Env,
           episode_length: int = 1000,
           action_repeat: int = 1,
           num_envs: int = 64,
+          num_sampling_per_update: int = 100,
           num_eval_envs: int = 16,
           learning_rate: float = 1e-4,
           discounting: float = 0.9,
@@ -317,11 +318,25 @@ def train(environment: envs.Env,
       buffer_state: ReplayBufferState, key: PRNGKey
   ) -> Tuple[TrainingState, envs.State, ReplayBufferState, Metrics]:
     experience_key, training_key = jax.random.split(key)
-    normalizer_params, env_state, buffer_state = get_experience(
-        training_state.normalizer_params, training_state.policy_params,
-        env_state, buffer_state, experience_key)
-    training_state = training_state.replace(normalizer_params=normalizer_params, env_steps=training_state.env_steps + env_steps_per_actor_step)
 
+    def multi_sampling_per_train(carry, unused_t):
+        normalizer_params, policy_params, env_state, buffer_state, experience_key, training_state = carry
+        normalizer_params, env_state, buffer_state = get_experience(
+            normalizer_params, policy_params, env_state, buffer_state, experience_key)
+        training_state = training_state.replace(normalizer_params=normalizer_params, env_steps=training_state.env_steps + env_steps_per_actor_step)
+        return (normalizer_params, policy_params, env_state, buffer_state, experience_key, training_state), (unused_t)
+
+    (_, _, env_state, buffer_state, _, training_state), (_) = jax.lax.scan(
+        multi_sampling_per_train,
+        (training_state.normalizer_params, training_state.policy_params, env_state, buffer_state, experience_key, training_state),
+        (jnp.arange(num_sampling_per_update)))
+    '''
+    for i in range(100):
+        normalizer_params, env_state, buffer_state = get_experience(
+            training_state.normalizer_params, training_state.policy_params,
+            env_state, buffer_state, experience_key)
+        training_state = training_state.replace(normalizer_params=normalizer_params, env_steps=training_state.env_steps + env_steps_per_actor_step)
+    '''
     buffer_state, transitions = replay_buffer.sample(buffer_state)
     # Change the front dimension of transitions so 'update_step' is called
     # grad_updates_per_step times by the scan.
