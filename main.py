@@ -16,19 +16,15 @@ from brax.training.agents.ppo import train as ppo
 from brax.training.agents.sac import train as sac
 from brax.training.agents.apg2 import train as apg2
 from brax.training.agents.sac2 import train as offpolicy
+from brax.training.agents.sac2 import td_train as offpolicy_v2
+import warnings
+warnings.filterwarnings("ignore")
 
 env_name = "walker2d"  # @param ['ant', 'fetch', 'grasp', 'halfcheetah', 'hopper', 'humanoid', 'humanoidstandup', 'pusher', 'reacher', 'walker2d', 'grasp', 'ur5e']
 env = envs.get_environment(env_name=env_name)
 state = env.reset(rng=jp.random_prngkey(seed=0))
 
-train_fn = {
-  # 'walker2d': functools.partial(apg2.train, episode_length=1000, num_envs=8, num_evals=200, logdir='./logs'),
-  'walker2d': functools.partial(offpolicy.train, num_timesteps = 20_0000, episode_length=1000, num_evals=50, num_envs=4, logdir='./logs'),
-}[env_name]
-
-max_y = {'ant': 8000, 'halfcheetah': 8000, 'hopper': 2500, 'humanoid': 13000, 
-          'humanoidstandup': 75_000, 'reacher': 5, 'walker2d': 5000, 'fetch': 15, 'grasp': 100, 'ur5e': 10, 'pusher': 0}[env_name]
-min_y = {'reacher': -100, 'pusher': -150}.get(env_name, 0)
+train_fn = functools.partial(offpolicy_v2.train, num_timesteps = 20_0000, episode_length=1000, num_evals=50, num_envs=4, logdir='./logs')
 
 xdata, ydata = [], []
 times = [datetime.now()]
