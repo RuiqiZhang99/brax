@@ -16,6 +16,8 @@
 
 from typing import Sequence, Tuple
 
+from brax.training import distribution
+
 from brax.training.agents.sac2 import utils
 
 from brax.training import types
@@ -55,9 +57,11 @@ def make_sac_networks(
     preprocess_observations_fn: types.PreprocessObservationFn = types
     .identity_observation_preprocessor,
     hidden_layer_sizes: Sequence[int] = (256, 256),
-    activation: utils.ActivationFn = linen.elu, alpha = 0.2) -> SACNetworks:
+    activation: utils.ActivationFn = linen.elu, alpha = 0.2, lock_variance = False) -> SACNetworks:
   """Make SAC networks."""
-  parametric_action_distribution = utils.NormalTanhDistribution(event_size=action_size, alpha=alpha)
+  parametric_action_distribution = distribution.NormalTanhDistribution(event_size=action_size)
+  if lock_variance:
+    parametric_action_distribution = utils.NormalTanhDistribution(event_size=action_size, alpha=alpha)
   policy_network = utils.make_policy_network(
       parametric_action_distribution.param_size,
       observation_size,

@@ -119,6 +119,7 @@ def train(environment: envs.Env,
           deterministic_eval: bool = True,
           tensorboard_flag = True,
           logdir = './logs',
+          lock_variance = False,
           network_factory: types.NetworkFactory[sac_networks.SACNetworks] = sac_networks.make_sac_networks,
           progress_fn: Callable[[int, Metrics], None] = lambda *args: None,
           checkpoint_logdir: Optional[str] = None):
@@ -172,7 +173,8 @@ def train(environment: envs.Env,
       observation_size=obs_size,
       action_size=action_size,
       preprocess_observations_fn=normalize_fn,
-      alpha = alpha)
+      alpha = alpha,
+      lock_variance=lock_variance)
   make_policy = sac_networks.make_inference_fn(sac_network)
 
   policy_optimizer = optax.adam(learning_rate=learning_rate)
@@ -229,6 +231,7 @@ def train(environment: envs.Env,
         key_actor,
         alpha,
         beta,
+        lock_variance,
         optimizer_state=training_state.policy_optimizer_state)
 
     new_target_q_params = jax.tree_map(lambda x, y: x * (1 - tau) + y * tau,

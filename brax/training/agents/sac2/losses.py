@@ -22,6 +22,7 @@ from brax.training import types
 from brax.training.agents.sac2 import networks as sac_networks
 from brax.training.types import Params
 from brax.training.types import PRNGKey
+from brax.training import distribution
 import jax
 import jax.numpy as jnp
 
@@ -59,18 +60,23 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
 
   def actor_loss(policy_params: Params, normalizer_params: Any,
                  q_params: Params, transitions: Transition,
-                 key: PRNGKey, alpha, beta) -> jnp.ndarray:
-    dist_mean = policy_network.apply(normalizer_params, policy_params, transitions.observation)
-    dist_std = alpha * jnp.ones_like(dist_mean)
+                 key: PRNGKey, alpha, beta, lock_variance=False) -> jnp.ndarray:
+    
     # dist_mean, dist_std = jnp.split(dist_params, 2, axis=-1)
     # action_raw = parametric_action_distribution.sample_no_postprocessing(dist_params, key)
     indiff_origin_action = transitions.extras['policy_extras']['origin_action']
-
-    diff_epsilon = (indiff_origin_action - dist_mean) / dist_std
+    if lock_variance:
+        dist_mean = policy_network.apply(normalizer_params, policy_params, transitions.observation)
+        dist_std = alpha * jnp.ones_like(dist_mean)
+    else:
+        dist_params = policy_network.apply(normalizer_params, policy_params, transitions.observation)
+        dist_mean, dist_std = jnp.split(dist_params, 2, axis=-1)
+    
+    diff_epsilon = (indiff_origin_action - dist_mean) / (dist_std + 0.001)
     epsilon = jax.lax.stop_gradient(diff_epsilon)
     diff_action_raw = dist_mean + jax.lax.stop_gradient(epsilon * dist_std)
-    diff_action = parametric_action_distribution.postprocess(diff_action_raw)
 
+    diff_action = parametric_action_distribution.postprocess(diff_action_raw)
     # log_prob = parametric_action_distribution.log_prob(dist_params, diff_action_raw)
     q_action = q_network.apply(normalizer_params, q_params,transitions.observation, diff_action)
     min_q = jnp.min(q_action, axis=-1)
