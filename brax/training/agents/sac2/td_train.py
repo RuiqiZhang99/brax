@@ -379,7 +379,7 @@ def train(environment: envs.Env,
     # grad_updates_per_step times by the scan.
     transitions = jax.tree_map(lambda x: jnp.reshape(x, (grad_updates_per_step, -1) + x.shape[1:]), transitions)
     (training_state, _), actor_metrics = jax.lax.scan(actor_update_step, (training_state, training_key), transitions)
-    metrics = actor_metrics + critic_metrics
+    metrics = {**actor_metrics, **critic_metrics}
 
     metrics['buffer_current_size'] = buffer_state.current_size
     metrics['buffer_current_position'] = buffer_state.current_position
