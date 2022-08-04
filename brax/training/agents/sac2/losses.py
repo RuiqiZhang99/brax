@@ -80,7 +80,7 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
 
     actor_loss = partial_reward_mul_action + discounting * min_q
     truncation = transitions.extras['state_extras']['truncation']
-    actor_loss = -jnp.mean(actor_loss * jnp.expand_dims(1 - truncation, -1)) + jnp.absolute(diff_epsilon)
+    actor_loss = -jnp.mean(actor_loss * jnp.expand_dims(1 - truncation, -1)) + beta * jnp.mean(jnp.absolute(diff_epsilon))
     return actor_loss, {'Q_bootstrap': jnp.mean(min_q),
                         'raw_action_mean': jnp.mean(diff_action_raw),
                         'raw_action_std': jnp.std(diff_action_raw),
