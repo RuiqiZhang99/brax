@@ -59,14 +59,15 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
 
   def actor_loss(policy_params: Params, normalizer_params: Any,
                  q_params: Params, transitions: Transition,
-                 key: PRNGKey, alpha) -> jnp.ndarray:
+                 key: PRNGKey, alpha, beta) -> jnp.ndarray:
     dist_mean = policy_network.apply(normalizer_params, policy_params, transitions.observation)
     dist_std = alpha * jnp.ones_like(dist_mean)
     # dist_mean, dist_std = jnp.split(dist_params, 2, axis=-1)
     # action_raw = parametric_action_distribution.sample_no_postprocessing(dist_params, key)
     indiff_origin_action = transitions.extras['policy_extras']['origin_action']
 
-    epsilon = jax.lax.stop_gradient((indiff_origin_action - dist_mean) / dist_std)
+    diff_epsilon = (indiff_origin_action - dist_mean) / dist_std
+    epsilon = jax.lax.stop_gradient(diff_epsilon)
     diff_action_raw = dist_mean + jax.lax.stop_gradient(epsilon * dist_std)
     diff_action = parametric_action_distribution.postprocess(diff_action_raw)
 
@@ -79,7 +80,7 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
 
     actor_loss = partial_reward_mul_action + discounting * min_q
     truncation = transitions.extras['state_extras']['truncation']
-    actor_loss = -jnp.mean(actor_loss * jnp.expand_dims(1 - truncation, -1))
+    actor_loss = -jnp.mean(actor_loss * jnp.expand_dims(1 - truncation, -1)) + jnp.mean(diff_epsilon)
     return actor_loss, {'Q_bootstrap': jnp.mean(min_q),
                         'raw_action_mean': jnp.mean(diff_action_raw),
                         'raw_action_std': jnp.std(diff_action_raw),
