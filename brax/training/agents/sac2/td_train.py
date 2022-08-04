@@ -352,23 +352,25 @@ def train(environment: envs.Env,
   ) -> Tuple[TrainingState, envs.State, ReplayBufferState, Metrics]:
     experience_key, training_key = jax.random.split(key)
     
-    for idx in range(td3_d):
-        normalizer_params, env_state, buffer_state = get_experience(
-            training_state.normalizer_params, training_state.policy_params, env_state, buffer_state, experience_key)
-        training_state = training_state.replace(normalizer_params=normalizer_params, env_steps=training_state.env_steps + env_steps_per_actor_step)
-        buffer_state, transitions = replay_buffer.sample(buffer_state)
-        transitions = jax.tree_map(lambda x: jnp.reshape(x, (grad_updates_per_step, -1) + x.shape[1:]), transitions)
-        (training_state, _), critic_metrics = jax.lax.scan(critic_update_step, (training_state, training_key), transitions)
+    def multi_critic_update(carry, unused_t):
+      normalizer_params, policy_params, env_state, buffer_state, experience_key, training_state, critic_metrics = carry
+      normalizer_params, env_state, buffer_state = get_experience(
+          normalizer_params, policy_params, env_state, buffer_state, experience_key)
+      training_state = training_state.replace(normalizer_params=normalizer_params, env_steps=training_state.env_steps + env_steps_per_actor_step)
+      buffer_state, transitions = replay_buffer.sample(buffer_state)
+      transitions = jax.tree_map(lambda x: jnp.reshape(x, (grad_updates_per_step, -1) + x.shape[1:]), transitions)
+      (training_state, _), critic_metrics = jax.lax.scan(critic_update_step, (training_state, training_key), transitions)
+      return (normalizer_params, policy_params, env_state, buffer_state, experience_key, training_state, critic_metrics), (unused_t)
 
-    '''
-    critic_metrics_placeholder = {'critic_loss': jnp.mean(jnp.zeros((1,)))}
+    
+    critic_metrics_placeholder = {'critic_loss': jnp.zeros((1, ))}
     (_, _, env_state, buffer_state, _, training_state, critic_metrics), (_) = jax.lax.scan(
         multi_critic_update,
         (training_state.normalizer_params, training_state.policy_params, env_state, 
           buffer_state, experience_key, training_state, critic_metrics_placeholder),
         (jnp.arange(td3_d)))
 
-    
+    '''
     normalizer_params, env_state, buffer_state = get_experience(
         training_state.normalizer_params, training_state.policy_params,
         env_state, buffer_state, experience_key)
