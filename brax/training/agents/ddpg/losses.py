@@ -51,7 +51,8 @@ def make_losses(ddpg_network: ddpg_networks.DDPGNetworks, reward_scaling: float,
     diff_action = parametric_action_distribution.postprocess(diff_action_raw)
     # log_prob = parametric_action_distribution.log_prob(dist_params, diff_action_raw)
     q_action = q_network.apply(normalizer_params, q_params,transitions.observation, diff_action)
-    min_q = jnp.min(q_action, axis=-1)
+    truncation_mask = 1 - transitions.extras['state_extras']['truncation']
+    min_q = jnp.min(q_action, axis=-1) * truncation_mask
 
     actor_loss = -jnp.mean(min_q)
     return actor_loss, {

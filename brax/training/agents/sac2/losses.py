@@ -79,14 +79,15 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
     diff_action = parametric_action_distribution.postprocess(diff_action_raw)
     # log_prob = parametric_action_distribution.log_prob(dist_params, diff_action_raw)
     q_action = q_network.apply(normalizer_params, q_params,transitions.observation, diff_action)
-    min_q = jnp.min(q_action, axis=-1)
+    truncation_mask = 1 - transitions.extras['state_extras']['truncation']
+    min_q = jnp.min(q_action, axis=-1) * truncation_mask
     
     reward_action_grad = transitions.extras['reward_action_grad']
     partial_reward_mul_action = jnp.sum(reward_action_grad * diff_action, axis=-1)
 
     actor_loss = partial_reward_mul_action + discounting * min_q
-    truncation = transitions.extras['state_extras']['truncation']
-    actor_loss = -jnp.mean(actor_loss * jnp.expand_dims(1 - truncation, -1)) + beta * jnp.mean(jnp.absolute(diff_epsilon))
+    
+    actor_loss = -jnp.mean(actor_loss) + beta * jnp.mean(jnp.absolute(diff_epsilon))
     return actor_loss, {'Q_bootstrap': jnp.mean(min_q),
                         'raw_action_mean': jnp.mean(diff_action_raw),
                         'raw_action_std': jnp.std(diff_action_raw),
