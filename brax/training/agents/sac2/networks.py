@@ -41,10 +41,13 @@ def make_inference_fn(sac_networks: SACNetworks):
     def policy(observations: types.Observation,
                key_sample: PRNGKey) -> Tuple[types.Action, types.Extra]:
       logits = sac_networks.policy_network.apply(*params, observations)
+      param_act_dist = sac_networks.parametric_action_distribution
       if deterministic:
-        return sac_networks.parametric_action_distribution.mode(logits), {}
-      origin_action = sac_networks.parametric_action_distribution.sample_no_postprocessing(logits, key_sample)
-      return sac_networks.parametric_action_distribution.postprocess(origin_action), {'origin_action': origin_action}
+        return param_act_dist.mode(logits), {}
+      origin_action = param_act_dist.sample_no_postprocessing(logits, key_sample)
+      log_prob = param_act_dist.log_prob(logits, origin_action)
+      return sac_networks.parametric_action_distribution.postprocess(origin_action), \
+      {'origin_action': origin_action, 'log_prob': log_prob}
 
     return policy
 

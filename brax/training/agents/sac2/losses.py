@@ -60,34 +60,41 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
 
   def actor_loss(policy_params: Params, normalizer_params: Any,
                  q_params: Params, transitions: Transition,
-                 key: PRNGKey, alpha, beta, lock_variance=False) -> jnp.ndarray:
+                 key: PRNGKey, alpha, beta, lock_variance=False, clipping=0.2) -> jnp.ndarray:
     
     # dist_mean, dist_std = jnp.split(dist_params, 2, axis=-1)
     # action_raw = parametric_action_distribution.sample_no_postprocessing(dist_params, key)
     indiff_origin_action = transitions.extras['policy_extras']['origin_action']
+    old_action_log_prob = transitions.extras['policy_extras']['log_prob']
+    dist_params = policy_network.apply(normalizer_params, policy_params, transitions.observation)
+    '''
     if lock_variance:
-        dist_mean = policy_network.apply(normalizer_params, policy_params, transitions.observation)
+        dist_mean = dist_params
         dist_std = alpha * jnp.ones_like(dist_mean)
     else:
-        dist_params = policy_network.apply(normalizer_params, policy_params, transitions.observation)
-        dist_mean, dist_std = jnp.split(dist_params, 2, axis=-1)
-    
+    '''
+    dist_mean, dist_std = jnp.split(dist_params, 2, axis=-1)
+    target_action_log_prob = parametric_action_distribution.log_prob(dist_params, old_action_log_prob)
+    rho_s = jnp.exp(target_action_log_prob - jnp.squeeze(old_action_log_prob))
     diff_epsilon = (indiff_origin_action - dist_mean) / (dist_std + 0.001)
     epsilon = jax.lax.stop_gradient(diff_epsilon)
     diff_action_raw = dist_mean + jax.lax.stop_gradient(epsilon * dist_std)
 
     diff_action = parametric_action_distribution.postprocess(diff_action_raw)
-    # log_prob = parametric_action_distribution.log_prob(dist_params, diff_action_raw)
     q_action = q_network.apply(normalizer_params, q_params,transitions.observation, diff_action)
     truncation_mask = 1 - transitions.extras['state_extras']['truncation']
     min_q = jnp.min(q_action, axis=-1) * truncation_mask
     
     reward_action_grad = transitions.extras['reward_action_grad']
     partial_reward_mul_action = jnp.sum(reward_action_grad * diff_action, axis=-1)
-
-    actor_loss = partial_reward_mul_action + discounting * min_q
+    surrogate_loss1 = rho_s * partial_reward_mul_action
+    surrogate_loss2 = jnp.clip(rho_s, 1 - clipping, 1 + clipping) * partial_reward_mul_action
+    surrogate_loss = jnp.minimum(surrogate_loss1, surrogate_loss2)
     
-    actor_loss = -jnp.mean(actor_loss) + beta * jnp.mean(jnp.absolute(diff_epsilon))
+
+    actor_loss = surrogate_loss + discounting * min_q
+    
+    actor_loss = -jnp.mean(actor_loss) #  + beta * jnp.mean(jnp.absolute(diff_epsilon))
     return actor_loss, {'Q_bootstrap': jnp.mean(min_q),
                         'raw_action_mean': jnp.mean(diff_action_raw),
                         'raw_action_std': jnp.std(diff_action_raw),

@@ -233,8 +233,7 @@ def train(environment: envs.Env,
       key: PRNGKey) -> Tuple[TrainingState, envs.State, Metrics]:
     nonlocal training_walltime
     t = time.time()
-    (training_state, env_state,
-     metrics) = training_epoch(training_state, env_state, key)
+    (training_state, env_state, metrics) = training_epoch(training_state, env_state, key)
     metrics = jax.tree_map(jnp.mean, metrics)
     jax.tree_map(lambda x: x.block_until_ready(), metrics)
 

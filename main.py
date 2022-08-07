@@ -17,7 +17,7 @@ from brax.training.agents.ddpg import train as ddpg
 from brax.training.agents.sac import train as sac
 from brax.training.agents.apg2 import train as apg2
 from brax.training.agents.sac2 import train as offpolicy
-from brax.training.agents.sac2 import td_train as offpolicy_v2
+# from brax.training.agents.sac2 import td_train as offpolicy_v2
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -25,7 +25,7 @@ env_name = "walker2d"  # @param ['ant', 'fetch', 'grasp', 'halfcheetah', 'hopper
 env = envs.get_environment(env_name=env_name)
 state = env.reset(rng=jp.random_prngkey(seed=0))
 
-train_fn = functools.partial(ddpg.train, num_timesteps = 20_0000, episode_length=1000, num_evals=50, num_envs=4, logdir='./logs')
+train_fn = functools.partial(offpolicy.train, num_timesteps = 20_0000, episode_length=1000, num_evals=50, num_envs=4, logdir='./logs')
 
 xdata, ydata = [], []
 times = [datetime.now()]
