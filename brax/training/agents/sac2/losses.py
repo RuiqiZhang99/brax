@@ -95,7 +95,7 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
 
     current_action = parametric_action_distribution.sample(dist_params, key)
     q_current = q_network.apply(normalizer_params, q_params, transitions.observation, current_action)
-    actor_loss = (partial_reward_mul_action + discounting * min_next_q)
+    actor_loss = q_current - (partial_reward_mul_action + discounting * min_next_q)
     # actor_loss = surrogate_loss + discounting * min_q
     
     actor_loss = -jnp.mean(actor_loss) #  + beta * jnp.mean(jnp.absolute(diff_epsilon))
