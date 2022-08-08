@@ -83,9 +83,9 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
 
     next_params = policy_network.apply(normalizer_params, policy_params, transitions.next_observation)
     next_action = parametric_action_distribution.sample(next_params, key)
-    q_next_action = q_network.apply(normalizer_params, q_params, transitions.next_observation, next_action)
+    q_next = q_network.apply(normalizer_params, q_params, transitions.next_observation, next_action)
     truncation_mask = 1 - transitions.extras['state_extras']['truncation']
-    min_next_q = jnp.min(q_next_action, axis=-1) * truncation_mask
+    min_next_q = jnp.min(q_next, axis=-1) * truncation_mask
     
     reward_action_grad = transitions.extras['reward_action_grad']
     partial_reward_mul_action = jnp.sum(reward_action_grad * diff_old_action, axis=-1)
@@ -95,7 +95,8 @@ def make_losses(sac_network: sac_networks.SACNetworks, reward_scaling: float,
 
     current_action = parametric_action_distribution.sample(dist_params, key)
     q_current = q_network.apply(normalizer_params, q_params, transitions.observation, current_action)
-    actor_loss = q_current - (partial_reward_mul_action + discounting * min_next_q)
+    min_current_q = jnp.min(q_current, axis=-1)
+    actor_loss = min_current_q - (partial_reward_mul_action + discounting * min_next_q)
     # actor_loss = surrogate_loss + discounting * min_q
     
     actor_loss = -jnp.mean(actor_loss) #  + beta * jnp.mean(jnp.absolute(diff_epsilon))
